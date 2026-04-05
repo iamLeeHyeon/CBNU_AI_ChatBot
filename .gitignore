@@ -1,0 +1,15 @@
+# 환경변수 (API 키 절대 커밋 금지)
+backend/.env
+
+# Python
+__pycache__/
+*.pyc
+backend/venv/
+*.egg-info/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# 기타
+.DS_Store
