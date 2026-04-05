@@ -12,7 +12,7 @@ SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
 def build_chat_response(messages: List[Message], context: str = "") -> str:
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-2.5-flash",
         system_instruction=SYSTEM_PROMPT,
     )
 
