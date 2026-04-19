@@ -205,3 +205,26 @@ def get_all_materials(courses: list[dict]) -> list[dict]:
         for material in course.get("materials", []):
             all_materials.append({**material, "course_name": course["name"]})
     return all_materials
+
+
+# ── 10. 통합 진입점 (동기 래퍼) ───────────────────────────────────────────────
+def get_lms_data(student_id: str | None = None, password: str | None = None) -> dict:
+    """
+    FastAPI 엔드포인트에서 호출하는 동기 진입점입니다.
+    asyncio.run()으로 비동기 크롤링을 실행하고 결과를 반환합니다.
+    반환 형태:
+    {
+        "courses": [...],           # 강의별 자료+과제
+        "assignments": [...],       # 전체 과제 (마감일 정렬)
+        "materials": [...]          # 전체 강의자료
+    }
+    """
+    sid, pw = _get_credentials(student_id, password)
+    data = asyncio.run(_crawl(sid, pw))
+
+    courses = data["courses"]
+    return {
+        "courses": courses,
+        "assignments": sort_assignments_by_due(courses),
+        "materials": get_all_materials(courses),
+    }
