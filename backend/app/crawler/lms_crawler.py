@@ -131,3 +131,47 @@ async def _get_assignments(page: Page, course_url: str) -> list[dict]:
         })
 
     return assignments
+
+
+# ── 7. 전체 데이터 수집 파이프라인 ────────────────────────────────────────────
+async def _crawl(student_id: str, password: str) -> dict:
+    """
+    로그인 → 강의 목록 → 각 강의별 강의자료 + 과제 순서로 크롤링합니다.
+    반환 형태:
+    {
+        "courses": [
+            {
+                "name": 강의명,
+                "materials": [...],
+                "assignments": [...]
+            },
+            ...
+        ]
+    }
+    """
+    async with async_playwright() as pw:
+        # headless=True: 브라우저 창 없이 백그라운드 실행
+        browser: Browser = await pw.chromium.launch(headless=True)
+        page: Page = await browser.new_page()
+
+        try:
+            # 로그인
+            await _login(page, student_id, password)
+            # 수강 강의 목록
+            courses = await _get_courses(page)
+
+            result = []
+            for course in courses:
+                # 강의별 자료 + 과제 수집
+                materials = await _get_materials(page, course["url"])
+                assignments = await _get_assignments(page, course["url"])
+                result.append({
+                    "name": course["name"],
+                    "materials": materials,
+                    "assignments": assignments,
+                })
+
+            return {"courses": result}
+        finally:
+            # 성공/실패 관계없이 브라우저 반드시 종료
+            await browser.close()
