@@ -175,3 +175,33 @@ async def _crawl(student_id: str, password: str) -> dict:
         finally:
             # 성공/실패 관계없이 브라우저 반드시 종료
             await browser.close()
+
+
+# ── 8. 과제 목록 마감일 기준 정렬 ─────────────────────────────────────────────
+def sort_assignments_by_due(courses: list[dict]) -> list[dict]:
+    """
+    전체 강의의 과제를 하나의 리스트로 합쳐 마감일 기준 오름차순 정렬합니다.
+    마감일 없는 항목은 맨 뒤로 보냅니다.
+    """
+    all_assignments = []
+    for course in courses:
+        for assignment in course.get("assignments", []):
+            # 어느 강의 과제인지 추적하기 위해 course_name 추가
+            all_assignments.append({**assignment, "course_name": course["name"]})
+
+    # 마감일 없는 경우 "~" 문자열로 맨 뒤 정렬
+    all_assignments.sort(key=lambda a: a.get("due_date") or "~")
+    return all_assignments
+
+
+# ── 9. 강의자료 목록 통합 반환 ────────────────────────────────────────────────
+def get_all_materials(courses: list[dict]) -> list[dict]:
+    """
+    전체 강의의 강의자료를 하나의 리스트로 합쳐 반환합니다.
+    각 항목에 course_name 필드가 포함됩니다.
+    """
+    all_materials = []
+    for course in courses:
+        for material in course.get("materials", []):
+            all_materials.append({**material, "course_name": course["name"]})
+    return all_materials
