@@ -64,3 +64,37 @@ async def _get_courses(page: Page) -> list[dict]:
         courses.append({"name": name.strip(), "url": url})
 
     return courses
+
+
+# ── 5. 강의자료 목록 크롤링 ───────────────────────────────────────────────────
+async def _get_materials(page: Page, course_url: str) -> list[dict]:
+    """
+    개별 강의 페이지에서 강의자료(파일/링크) 목록을 파싱합니다.
+    반환 형태: [{"title": 자료명, "date": 날짜, "url": URL}, ...]
+    """
+    await page.goto(course_url)
+
+    # 강의자료 activity 항목 선택 (resource = 파일 자료)
+    items = page.locator(".activity.resource, .activity.url")
+    count = await items.count()
+
+    materials = []
+    for i in range(count):
+        item = items.nth(i)
+        # 자료 제목
+        title_el = item.locator(".instancename")
+        title = await title_el.inner_text() if await title_el.count() > 0 else "제목 없음"
+        # 날짜 정보 (있는 경우만)
+        date_el = item.locator(".date")
+        date = await date_el.inner_text() if await date_el.count() > 0 else ""
+        # 자료 링크
+        link_el = item.locator("a")
+        url = await link_el.get_attribute("href") if await link_el.count() > 0 else ""
+
+        materials.append({
+            "title": title.replace("\xa0숨기기", "").strip(),  # LMS가 제목에 붙이는 불필요 텍스트 제거
+            "date": date.strip(),
+            "url": url,
+        })
+
+    return materials
