@@ -21,3 +21,24 @@ def _get_credentials(student_id: str | None = None, password: str | None = None)
     if not sid or not pw:
         raise ValueError("LMS 학번(LMS_ID)과 비밀번호(LMS_PW)가 설정되지 않았습니다.")
     return sid, pw
+
+
+# ── 3. 브라우저 실행 및 LMS 로그인 ────────────────────────────────────────────
+async def _login(page: Page, student_id: str, password: str) -> None:
+    """
+    Playwright로 LMS 로그인 페이지에 접속 후 학번/비밀번호를 입력합니다.
+    로그인 실패 시 예외를 발생시킵니다.
+    """
+    await page.goto(LMS_LOGIN_URL)
+
+    # 학번 입력란에 학번 입력
+    await page.fill("#username", student_id)
+    # 비밀번호 입력란에 비밀번호 입력
+    await page.fill("#password", password)
+    # 로그인 버튼 클릭
+    await page.click("#loginbtn")
+
+    # 로그인 실패 메시지가 있으면 예외 처리
+    error = page.locator(".loginerrors")
+    if await error.count() > 0:
+        raise ValueError("LMS 로그인 실패: 학번 또는 비밀번호를 확인하세요.")
