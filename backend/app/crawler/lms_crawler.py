@@ -98,3 +98,36 @@ async def _get_materials(page: Page, course_url: str) -> list[dict]:
         })
 
     return materials
+
+
+# ── 6. 과제 목록 크롤링 ───────────────────────────────────────────────────────
+async def _get_assignments(page: Page, course_url: str) -> list[dict]:
+    """
+    개별 강의 페이지에서 과제 목록과 마감일, 제출 여부를 파싱합니다.
+    반환 형태: [{"title": 과제명, "due_date": 마감일, "submitted": bool}, ...]
+    """
+    await page.goto(course_url)
+
+    # 과제 activity 항목 선택 (assign = 과제)
+    items = page.locator(".activity.assign")
+    count = await items.count()
+
+    assignments = []
+    for i in range(count):
+        item = items.nth(i)
+        # 과제 제목
+        title_el = item.locator(".instancename")
+        title = await title_el.inner_text() if await title_el.count() > 0 else "제목 없음"
+        # 마감일
+        date_el = item.locator(".date")
+        due_date = await date_el.inner_text() if await date_el.count() > 0 else ""
+        # 제출 여부: 'submitted' 클래스가 있으면 제출 완료
+        submitted = await item.locator(".submitted").count() > 0
+
+        assignments.append({
+            "title": title.replace("\xa0숨기기", "").strip(),
+            "due_date": due_date.strip(),
+            "submitted": submitted,
+        })
+
+    return assignments
