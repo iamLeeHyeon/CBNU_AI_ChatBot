@@ -15,3 +15,9 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     sources: List[str] = []
+
+
+# LMS 로그인 요청 스키마
+class LMSLoginRequest(BaseModel):
+    student_id: str
+    password: str
