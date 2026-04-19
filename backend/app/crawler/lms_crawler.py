@@ -42,3 +42,25 @@ async def _login(page: Page, student_id: str, password: str) -> None:
     error = page.locator(".loginerrors")
     if await error.count() > 0:
         raise ValueError("LMS 로그인 실패: 학번 또는 비밀번호를 확인하세요.")
+
+
+# ── 4. 수강 중인 강의 목록 가져오기 ───────────────────────────────────────────
+async def _get_courses(page: Page) -> list[dict]:
+    """
+    LMS 대시보드에서 현재 수강 중인 강의 목록을 파싱합니다.
+    반환 형태: [{"name": 강의명, "url": 강의 URL}, ...]
+    """
+    await page.goto(LMS_DASHBOARD_URL)
+
+    # 강의 카드 목록 선택 (LMS Moodle 기본 구조 기준)
+    course_links = page.locator(".coursename a")
+    count = await course_links.count()
+
+    courses = []
+    for i in range(count):
+        link = course_links.nth(i)
+        name = await link.inner_text()
+        url = await link.get_attribute("href")
+        courses.append({"name": name.strip(), "url": url})
+
+    return courses
