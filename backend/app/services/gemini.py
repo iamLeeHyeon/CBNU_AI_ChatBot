@@ -2,6 +2,7 @@ import os
 import google.generativeai as genai
 from typing import List
 from app.models.schemas import Message
+from datetime import datetime
 
 SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
 학생, 교직원, 방문자에게 충북대학교에 관한 정확하고 친절한 정보를 제공합니다.
@@ -10,10 +11,14 @@ SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
 
 
 def build_chat_response(messages: List[Message], context: str = "") -> str:
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    dynamic_prompt = f"{SYSTEM_PROMPT}\n\n[시스템 정보]\n현재 일시: {now}"
+
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel(
         model_name="gemini-2.5-flash",
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=dynamic_prompt,
     )
 
     history = []
