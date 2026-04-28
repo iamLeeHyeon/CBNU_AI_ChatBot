@@ -15,10 +15,18 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     dynamic_prompt = f"{SYSTEM_PROMPT}\n\n[시스템 정보]\n현재 일시: {now}"
 
+    generation_config = {
+    "temperature": 0.2,    # 낮을수록 정확하고 일관된 답변 (0.0 ~ 2.0), 대답이 너무 일관적인 경우 상향조정
+    "top_p": 0.8,
+    "top_k": 40,
+    "max_output_tokens": 1024, # 답변 길이 제한
+    }
+
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel(
         model_name="gemini-2.5-flash",
         system_instruction=dynamic_prompt,
+        generation_config = generation_config,
     )
 
     history = []
