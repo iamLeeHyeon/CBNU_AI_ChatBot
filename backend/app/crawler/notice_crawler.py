@@ -35,3 +35,16 @@ def search_notices(max_results: int = 5) -> list[dict]:
     )
     # 검색 결과 리스트 추출 (없으면 빈 리스트)
     return response.get("results", [])
+
+# ── 5. 학사일정 검색 ───────────────────────────────────────────────────────────
+def search_academic_calendar(max_results: int = 5) -> list[dict]:
+    """
+    Tavily로 충북대 학사일정을 검색합니다.
+    쿼리: '충북대학교 학사일정 site:cbnu.ac.kr'
+    """
+    client = _get_client()
+    response = client.search(
+        query="충북대학교 학사일정 site:cbnu.ac.kr",
+        max_results=max_results,
+    )
+    return response.get("results", [])
