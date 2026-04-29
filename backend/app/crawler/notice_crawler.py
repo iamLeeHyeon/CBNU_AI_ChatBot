@@ -48,3 +48,13 @@ def search_academic_calendar(max_results: int = 5) -> list[dict]:
         max_results=max_results,
     )
     return response.get("results", [])
+
+# ── 6. 허용 도메인 필터링 ──────────────────────────────────────────────────────
+def filter_by_allowed_domain(results: list[dict]) -> list[dict]:
+    """
+    검색 결과 중 robots.txt Allow 도메인에 해당하는 항목만 남깁니다.
+    도메인 제한이 너무 엄격하면 전체 결과를 그대로 반환합니다.
+    """
+    filtered = [r for r in results if is_allowed_url(r.get("url", ""))]
+    # 필터 후 결과가 없으면 원본 반환 (도메인 범위가 좁을 때 대비)
+    return filtered if filtered else results
