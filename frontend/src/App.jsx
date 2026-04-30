@@ -135,7 +135,7 @@ export default function App() {
           </div>
           <div className="flex-1">
             <p className="font-bold text-base leading-tight">충북대학교 AI 챗봇</p>
-            <p className="text-[10px] text-blue-200">Stable Connection • Gemini 1.5 Flash</p>
+            <p className="text-[10px] text-blue-200">Powered by Gemini Flash</p>
           </div>
         </header>
         <ChatWindow messages={messages} isLoading={isLoading} />
