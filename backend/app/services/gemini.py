@@ -29,7 +29,11 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
         generation_config = generation_config,
     )
 
-    history = []
+    history = [
+        {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
+        for m in messages[-11:-1]
+    ]
+    
     for msg in messages[:-1]:
         history.append({
             "role": "user" if msg.role == "user" else "model",
