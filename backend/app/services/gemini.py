@@ -33,18 +33,23 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
         {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
         for m in messages[-11:-1]
     ]
+
+    try:
+        for msg in messages[:-1]:
+            history.append({
+                "role": "user" if msg.role == "user" else "model",
+                "parts": [msg.content],
+            })
+
+        chat = model.start_chat(history=history)
+
+        last_content = messages[-1].content
+        if context:
+            last_content = f"[참고 자료]\n{context}\n\n[질문]\n{last_content}"
+
+        response = chat.send_message(last_content)
+        return response.text
     
-    for msg in messages[:-1]:
-        history.append({
-            "role": "user" if msg.role == "user" else "model",
-            "parts": [msg.content],
-        })
-
-    chat = model.start_chat(history=history)
-
-    last_content = messages[-1].content
-    if context:
-        last_content = f"[참고 자료]\n{context}\n\n[질문]\n{last_content}"
-
-    response = chat.send_message(last_content)
-    return response.text
+    except Exception as e:
+        print(f"API 호출 중 오류 발생: {e}")
+        return "죄송합니다. 현재 서비스가 원활하지 않습니다. 잠시 후 다시 시도해주세요."
