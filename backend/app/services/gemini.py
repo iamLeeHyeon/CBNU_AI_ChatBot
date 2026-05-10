@@ -35,10 +35,15 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
         summary_prompt = "다음은 이전까지의 대화 내용입니다. 핵심 내용을 3줄 이내로 요약하세요:\n"
         past_content = "\n".join([f"{m.role}: {m.content}" for m in messages[:-10]])
 
-    history = [
-        {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
-        for m in messages[-11:-1]
-    ]
+        # 별도 호출로 요약본 생성
+        summary_response = model.generate_content(summary_prompt + past_content)
+        if summary_response.text:
+            summary_text = f"[이전 대화 요약]: {summary_response.text}"
+        else:
+            summary_text = "[이전 대화 내용 생략]"
+	    
+        
+
 
     try:
         for msg in messages[:-1]:
