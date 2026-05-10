@@ -54,7 +54,10 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
             {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
             for m in messages[:-1]
         ]
-
+    # 토큰 개수 확인 (디버깅용)
+    total_tokens = model.count_tokens(str(history)).total_tokens
+    print(f"현재 전송 토큰 수: {total_tokens}")
+    print(f"메시지당 평균 토큰: {total_tokens / len(history):.1f}")
 
     try:
         for msg in messages[:-1]:
