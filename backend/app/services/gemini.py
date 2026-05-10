@@ -41,7 +41,13 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
             summary_text = f"[이전 대화 요약]: {summary_response.text}"
         else:
             summary_text = "[이전 대화 내용 생략]"
-	    
+	            
+        # 요약본을 첫 번째 히스토리로 넣고, 최근 10개만 유지
+        history = [{"role": "user", "parts": [summary_text]}]
+        history.extend([
+            {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
+            for m in messages[-10:-1]
+        ])
         
 
 
