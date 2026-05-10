@@ -29,6 +29,12 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
         generation_config = generation_config,
     )
 
+    # 2. 히스토리 요약 로직 추가
+    # 대화 내역이 너무 길어지면(예: 15개 이상) 앞부분을 요약하여 전달
+    if len(messages) > 15:
+        summary_prompt = "다음은 이전까지의 대화 내용입니다. 핵심 내용을 3줄 이내로 요약하세요:\n"
+        past_content = "\n".join([f"{m.role}: {m.content}" for m in messages[:-10]])
+
     history = [
         {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
         for m in messages[-11:-1]
