@@ -49,6 +49,11 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
             for m in messages[-10:-1]
         ])
         
+    else:
+        history = [
+            {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
+            for m in messages[:-1]
+        ]
 
 
     try:
