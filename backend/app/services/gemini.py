@@ -150,3 +150,11 @@ async def optimize_search_query(user_query: str, messages: List[Message]) -> str
     2. 충북대학교 관련 질문이면 "충북대학교" 키워드를 포함하세요.
     3. 검색어는 반드시 10자 이상으로 작성하세요.
     4. 검색어만 출력하고 설명, 따옴표, 부연은 절대 쓰지 마세요.
+
+    [이전 대화]
+    {recent_context if recent_context else "없음"}
+
+    [사용자 질문]
+    {user_query}
+
+    [검색어]"""
