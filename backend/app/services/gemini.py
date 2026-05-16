@@ -39,6 +39,15 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
 
     seen_contents = set()
     processed = []
+    
+    for i, result in enumerate(raw_results):
+        content = result.get("content", "").strip()
+
+        # 중복 내용 제거 (앞 50자 기준)
+        content_key = content[:50]
+        if content_key in seen_contents:
+            continue
+        seen_contents.add(content_key)
 
 def build_chat_response(messages: List[Message], context: str = "") -> str:
 
