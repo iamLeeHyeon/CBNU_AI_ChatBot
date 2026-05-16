@@ -158,3 +158,11 @@ async def optimize_search_query(user_query: str, messages: List[Message]) -> str
     {user_query}
 
     [검색어]"""
+
+    try:
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            generation_config={"temperature": 0.0, "max_output_tokens": 64},
+        )
+        response = model.generate_content(prompt)
