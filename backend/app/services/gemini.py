@@ -137,3 +137,10 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
     except Exception as e:
         print(f"API 호출 중 오류 발생: {e}")
         return "죄송합니다. 현재 서비스가 원활하지 않습니다. 잠시 후 다시 시도해주세요."
+
+async def optimize_search_query(user_query: str, messages: List[Message]) -> str:
+    recent_context = "\n".join(
+        [f"{m.role}: {m.content}" for m in messages[-4:-1]]
+    ) if len(messages) > 1 else ""
+
+    prompt = f"""사용자의 질문을 웹 검색에 적합한 구체적인 검색어로 변환하세요.
