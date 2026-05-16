@@ -166,3 +166,10 @@ async def optimize_search_query(user_query: str, messages: List[Message]) -> str
             generation_config={"temperature": 0.0, "max_output_tokens": 64},
         )
         response = model.generate_content(prompt)
+
+        #  finish_reason 먼저 확인 후 text 접근 (SAFETY 등 비정상 종료 대비)
+        finish_reason = response.candidates[0].finish_reason.name
+        if finish_reason != "STOP":
+            raise ValueError(f"finish_reason: {finish_reason}")
+
+        optimized = response.text.strip()
