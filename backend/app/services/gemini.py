@@ -64,6 +64,11 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
             f"{content}"
         )
 
+    if not processed:
+        return ""
+
+    return "\n\n---\n\n".join(processed)
+
 def build_chat_response(messages: List[Message], context: str = "") -> str:
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
