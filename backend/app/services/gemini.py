@@ -180,3 +180,11 @@ async def optimize_search_query(user_query: str, messages: List[Message]) -> str
 
         print(f"[쿼리 최적화] '{user_query}' → '{optimized}'")
         return optimized
+    
+    except Exception as e:
+        #  폴백: 이미 충북대 포함이면 그대로, 없으면 앞에 붙이기
+        print(f"[쿼리 최적화 실패] {e}")
+        fallback = user_query if "충북대" in user_query or "cbnu" in user_query.lower() \
+                   else f"충북대학교 {user_query}"
+        print(f"[폴백 쿼리] {fallback}")
+        return fallback
