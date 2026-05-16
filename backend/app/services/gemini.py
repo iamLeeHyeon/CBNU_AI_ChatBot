@@ -48,7 +48,7 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
         if content_key in seen_contents:
             continue
         seen_contents.add(content_key)
-        
+
         # 길이 제한
         if len(content) > max_chars_per_result:
             content = content[:max_chars_per_result] + "..."
@@ -57,6 +57,12 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
         url = result.get("url", "")
         date = result.get("published_date", "")
         date_str = f" ({date})" if date else ""
+
+        processed.append(
+            f"[출처 {i+1}] {title}{date_str}\n"
+            f"URL: {url}\n"
+            f"{content}"
+        )
 
 def build_chat_response(messages: List[Message], context: str = "") -> str:
 
