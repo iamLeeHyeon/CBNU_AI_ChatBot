@@ -27,7 +27,13 @@ SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
 4. 위 과정을 바탕으로 최종 답변 구성
 
 """
-
+#  검색 결과 전처리: 중복 제거 + 길이 제한 + 날짜/출처 포맷
+def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> str:
+    """
+    Tavily 검색 결과를 Gemini에 넘기기 전에 정제합니다.
+    - raw_results: Tavily response["results"] 리스트
+    - 각 항목: {"title", "url", "content", "published_date"(optional)}
+    """
 
 def build_chat_response(messages: List[Message], context: str = "") -> str:
 
