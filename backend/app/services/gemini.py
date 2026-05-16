@@ -173,3 +173,10 @@ async def optimize_search_query(user_query: str, messages: List[Message]) -> str
             raise ValueError(f"finish_reason: {finish_reason}")
 
         optimized = response.text.strip()
+
+        #  중복 "충북대학교" 제거 후 길이 체크
+        if len(optimized) < 10:
+            raise ValueError(f"결과가 너무 짧음: '{optimized}'")
+
+        print(f"[쿼리 최적화] '{user_query}' → '{optimized}'")
+        return optimized
