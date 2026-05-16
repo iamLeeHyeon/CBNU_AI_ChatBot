@@ -34,6 +34,11 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
     - raw_results: Tavily response["results"] 리스트
     - 각 항목: {"title", "url", "content", "published_date"(optional)}
     """
+    if not raw_results:
+        return ""
+
+    seen_contents = set()
+    processed = []
 
 def build_chat_response(messages: List[Message], context: str = "") -> str:
 
