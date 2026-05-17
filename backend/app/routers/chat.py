@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import ChatRequest, ChatResponse
-from app.services.gemini import build_chat_response
+from app.services.gemini import build_chat_response, optimize_search_query
 from app.services.tavily import search_web
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -8,15 +8,22 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
+
     if not req.messages:
         raise HTTPException(status_code=400, detail="messages가 비어 있습니다.")
 
-    context = ""
+    search_results: list = []
     sources: list[str] = []
 
     if req.use_search:
         query = req.messages[-1].content
-        context, sources = search_web(query)
+        optimized_query = await optimize_search_query(query, req.messages)
+        print(f"[최적화 쿼리] {optimized_query}")
+        
+        search_results, sources = search_web(query)
+        print(f"[검색 결과 수] {len(search_results)}")          
+        print(f"[검색 결과 내용] {search_results[:1]}")          
+        print(f"[use_search 값] {req.use_search}")       
 
-    reply = build_chat_response(req.messages, context)
+    reply = build_chat_response(req.messages, search_results=search_results)
     return ChatResponse(reply=reply, sources=sources)
