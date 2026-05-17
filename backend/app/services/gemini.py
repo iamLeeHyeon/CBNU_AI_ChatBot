@@ -71,6 +71,11 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
 
 def build_chat_response(messages: List[Message], context: str = "") -> str:
 
+    """ 
+    search_results: Tavily의 response["results"] 리스트 (없으면 None)
+    context 문자열 대신 raw results를 받아서 내부에서 전처리합니다.
+    """ 
+
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     dynamic_prompt = f"{SYSTEM_PROMPT}\n\n[시스템 정보]\n현재 일시: {now}"
 
@@ -78,7 +83,7 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
     "temperature": 0.2,    # 낮을수록 정확하고 일관된 답변 (0.0 ~ 2.0), 대답이 너무 일관적인 경우 상향조정
     "top_p": 0.8,
     "top_k": 40,
-    "max_output_tokens": 1024, # 답변 길이 제한
+    "max_output_tokens": 4096, # 답변 길이 제한
     }
 
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -88,7 +93,7 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
         generation_config = generation_config,
     )
 
-    # 2. 히스토리 요약 로직 추가
+    # 히스토리 요약 로직 추가
     # 대화 내역이 너무 길어지면(예: 15개 이상) 앞부분을 요약하여 전달
     if len(messages) > 15:
         summary_prompt = "다음은 이전까지의 대화 내용입니다. 핵심 내용을 3줄 이내로 요약하세요:\n"
