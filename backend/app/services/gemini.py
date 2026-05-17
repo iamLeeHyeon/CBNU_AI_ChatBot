@@ -1,4 +1,5 @@
 import os
+import time
 import google.generativeai as genai
 from typing import List
 from app.models.schemas import Message
@@ -147,7 +148,30 @@ def build_chat_response(messages: List[Message], search_results: list = None) ->
                 f"불확실한 내용은 공식 홈페이지 확인을 안내하세요.\n\n"
                 f"[질문]\n{last_content}"
             )
-        
+
+        #  finish_reason 체크 + 재시도 로직
+        max_retries = 3
+        for attempt in range(max_retries):
+            response = chat.send_message(last_content)
+            finish_reason = response.candidates[0].finish_reason.name
+
+            if finish_reason == "STOP":
+                return response.text
+
+            print(f"[시도 {attempt + 1}] finish_reason: {finish_reason}")
+
+            if finish_reason == "MAX_TOKENS":
+                # 답변이 잘린 경우 이어쓰기 요청
+                followup = chat.send_message("이어서 계속 작성해주세요.")
+                return response.text + followup.text
+
+            if finish_reason in ("SAFETY", "RECITATION"):
+                return "해당 질문에는 답변이 어렵습니다. 충북대학교 공식 홈페이지를 확인해주세요."
+
+            time.sleep(1)
+
+        return response.text
+
     except Exception as e:
         print(f"API 호출 중 오류 발생: {e}")
         return "죄송합니다. 현재 서비스가 원활하지 않습니다. 잠시 후 다시 시도해주세요."
