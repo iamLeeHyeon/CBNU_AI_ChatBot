@@ -69,7 +69,7 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
 
     return "\n\n---\n\n".join(processed)
 
-def build_chat_response(messages: List[Message], context: str = "") -> str:
+def build_chat_response(messages: List[Message], search_results: list = None) -> str:
 
     """ 
     search_results: Tavily의 response["results"] 리스트 (없으면 None)
@@ -128,19 +128,25 @@ def build_chat_response(messages: List[Message], context: str = "") -> str:
 
         chat = model.start_chat(history=history)
         
-        for msg in messages[:-1]:
-            history.append({
-                "role": "user" if msg.role == "user" else "model",
-                "parts": [msg.content],
-             })
+        #  검색 결과 전처리 후 컨텍스트 구성
+        last_content = messages[-1].content
+        context = preprocess_context(search_results) if search_results else ""
 
-
-            last_content = messages[-1].content
-            if context:
-                last_content = f"[참고 자료]\n{context}\n\n[질문]\n{last_content}"
-
-            response = chat.send_message(last_content)
-            return response.text
+        if context:
+            last_content = (
+                f"[참고 자료]\n{context}\n\n"
+                f"---\n"
+                f"위 참고 자료를 바탕으로 아래 질문에 답변하세요. "
+                f"[질문]\n{last_content}"
+            )
+        else:
+            # 검색 결과 없을 때 Gemini에게 명시적으로 알림
+            last_content = (
+                f"[참고 자료 없음]\n"
+                f"웹 검색 결과가 없습니다. 학습된 지식으로만 답변하되, "
+                f"불확실한 내용은 공식 홈페이지 확인을 안내하세요.\n\n"
+                f"[질문]\n{last_content}"
+            )
         
     except Exception as e:
         print(f"API 호출 중 오류 발생: {e}")
