@@ -9,11 +9,16 @@ SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
 항상 한국어로 답변하세요."""
 
 
-def build_chat_response(messages: List[Message], context: str = "") -> str:
+def build_chat_response(messages: List[Message], context: str = "", lms_context: str = "") -> str:
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    
+    system = SYSTEM_PROMPT
+    if lms_context:
+        system += f"\n\n{lms_context}"
+
     model = genai.GenerativeModel(
         model_name="gemini-2.5-flash",
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=system,
     )
 
     history = []
