@@ -33,6 +33,16 @@ def normalize_url(url: str) -> str:
     parsed = urlparse(url.lower().strip())
     host = parsed.netloc.replace("www.", "")
     path = parsed.path.rstrip("/")
+    
+    # 기본 페이지 경로 패턴 제거 (index.do, /www/index.do 등)
+    default_paths = (
+        "/index.do", "/index.html", "/index.php", "/main.do",
+        "/www/index.do", "/www/index.html", "/www/main.do", "/www",
+    )
+    if path in default_paths or path.endswith(default_paths):
+        path = ""
+
+    return urlunparse((parsed.scheme, host, path, "", "", ""))
 
 #  검색 결과 전처리: 중복 제거 + 길이 제한 + 날짜/출처 포맷
 def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> str:
