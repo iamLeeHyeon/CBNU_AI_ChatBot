@@ -55,18 +55,24 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
         return ""
 
     seen_contents = set()
-    seen_urls = set() ##
+    seen_urls = set() 
     processed = []
 
     for i, result in enumerate(raw_results):
         content = result.get("content", "").strip()
 
-        norm_url = normalize_url(url) ##
+        norm_url = normalize_url(url) 
         if norm_url in seen_urls:
             print(f"[URL 중복 제거] {url}")
             continue
         seen_urls.add(norm_url)
-        
+
+        combined = (title + content + url).lower()
+        cbnu_keywords = ["충북대", "chungbuk", "cbnu"]
+        if not any(kw in combined for kw in cbnu_keywords):
+            print(f"[필터링] 충북대 무관 결과 제외: {title}")
+            continue
+
         # 중복 내용 제거 (앞 50자 기준)
         content_key = content[:50]
         if content_key in seen_contents:
