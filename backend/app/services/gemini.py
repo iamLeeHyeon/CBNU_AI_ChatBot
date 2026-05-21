@@ -308,3 +308,12 @@ def evaluate_and_rank_results(query: str, raw_results: list) -> list:
             r["index"] for r in rankings
             if r["score"] >= 15
         ][:3]
+
+        for r in rankings:
+            print(f"[결과 평가] index={r['index']} score={r['score']} reason={r.get('reason', '')}")
+
+        if not top_indices:
+            print("[결과 평가] 기준 충족 결과 없음 → 전체 사용")
+            return raw_results
+
+        return [raw_results[i] for i in top_indices]
