@@ -43,5 +43,11 @@ async def chat(req: ChatRequest):
             seen_urls.add(norm)
             sources.append(url)
 
+        sources = [
+            r["url"] for r in ranked_results
+            if any(kw in (r.get("title","") + r.get("content","") + r.get("url","")).lower()
+                   for kw in ["충북대", "chungbuk", "cbnu"])
+        ]
+
     reply = build_chat_response(req.messages, search_results=search_results)
     return ChatResponse(reply=reply, sources=sources)
