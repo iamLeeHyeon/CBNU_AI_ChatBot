@@ -302,3 +302,9 @@ def evaluate_and_rank_results(query: str, raw_results: list) -> list:
 
         # score 기준 내림차순 정렬
         rankings.sort(key=lambda x: x["score"], reverse=True)
+
+        # 상위 3개만 추출, score 15 미만은 제외
+        top_indices = [
+            r["index"] for r in rankings
+            if r["score"] >= 15
+        ][:3]
