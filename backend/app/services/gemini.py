@@ -4,6 +4,7 @@ import google.generativeai as genai
 from typing import List
 from app.models.schemas import Message
 from datetime import datetime
+from urllib.parse import urlparse, urlunparse
 
 SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
 학생, 교직원, 방문자에게 충북대학교에 관한 정확하고 친절한 정보를 제공합니다.
@@ -28,6 +29,11 @@ SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
 4. 위 과정을 바탕으로 최종 답변 구성
 
 """
+def normalize_url(url: str) -> str:
+    parsed = urlparse(url.lower().strip())
+    host = parsed.netloc.replace("www.", "")
+    path = parsed.path.rstrip("/")
+
 #  검색 결과 전처리: 중복 제거 + 길이 제한 + 날짜/출처 포맷
 def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> str:
     """
