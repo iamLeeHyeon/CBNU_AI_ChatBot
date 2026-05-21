@@ -272,3 +272,15 @@ def evaluate_and_rank_results(query: str, raw_results: list) -> list:
             f"내용: {r.get('content', '')[:300]}"
         )
     candidates_str = "\n\n".join(candidates)
+
+    prompt = (
+        f"다음은 '{query}'에 대한 웹 검색 결과입니다.\n\n"
+        f"{candidates_str}\n\n"
+        f"각 결과를 아래 기준으로 평가하여 JSON으로만 응답하세요. 설명 없이 JSON만 출력하세요.\n"
+        f"기준:\n"
+        f"1. 충북대학교와의 관련성 (0~10)\n"
+        f"2. 정보의 구체성 (0~10)\n"
+        f"3. 신뢰할 수 있는 출처 여부 (공식 홈페이지/뉴스/학교 공지 등) (0~10)\n\n"
+        f"응답 형식:\n"
+        f"[{{\"index\": 0, \"score\": 25, \"reason\": \"공식 공지사항\"}}, ...]"
+    )
