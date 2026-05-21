@@ -262,3 +262,13 @@ def evaluate_and_rank_results(query: str, raw_results: list) -> list:
     """
     if not raw_results:
         return []
+    
+    # 평가용 요약 텍스트 구성 (전체 내용 다 넣으면 토큰 낭비)
+    candidates = []
+    for i, r in enumerate(raw_results):
+        candidates.append(
+            f"[{i}] 제목: {r.get('title', '')}\n"
+            f"URL: {r.get('url', '')}\n"
+            f"내용: {r.get('content', '')[:300]}"
+        )
+    candidates_str = "\n\n".join(candidates)
