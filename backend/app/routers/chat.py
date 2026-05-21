@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import ChatRequest, ChatResponse
-from app.services.gemini import build_chat_response, optimize_search_query
+from app.services.gemini import build_chat_response, optimize_search_query, preprocess_context, evaluate_and_rank_results
 from app.services.tavily import search_web
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -23,7 +23,14 @@ async def chat(req: ChatRequest):
         search_results, sources = search_web(query)
         print(f"[검색 결과 수] {len(search_results)}")          
         print(f"[검색 결과 내용] {search_results[:1]}")          
-        print(f"[use_search 값] {req.use_search}")       
+        print(f"[use_search 값] {req.use_search}")   
+
+        #  필터링/중복제거 후 남은 결과에서 sources 추출
+        ranked_results = evaluate_and_rank_results(raw_query, search_results)
+
+        #  URL 정규화 기반 중복 제거해서 sources 추출
+        seen_urls = set()
+        sources = []    
 
     reply = build_chat_response(req.messages, search_results=search_results)
     return ChatResponse(reply=reply, sources=sources)
