@@ -284,3 +284,12 @@ def evaluate_and_rank_results(query: str, raw_results: list) -> list:
         f"응답 형식:\n"
         f"[{{\"index\": 0, \"score\": 25, \"reason\": \"공식 공지사항\"}}, ...]"
     )
+
+    try:
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            system_instruction="당신은 정보 품질 평가 전문가입니다. JSON만 출력합니다.",
+            generation_config={"temperature": 0.0, "max_output_tokens": 512},
+        )
+        response = model.generate_content(prompt)
