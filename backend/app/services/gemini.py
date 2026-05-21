@@ -33,7 +33,7 @@ def normalize_url(url: str) -> str:
     parsed = urlparse(url.lower().strip())
     host = parsed.netloc.replace("www.", "")
     path = parsed.path.rstrip("/")
-    
+
     # 기본 페이지 경로 패턴 제거 (index.do, /www/index.do 등)
     default_paths = (
         "/index.do", "/index.html", "/index.php", "/main.do",
@@ -55,11 +55,18 @@ def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> st
         return ""
 
     seen_contents = set()
+    seen_urls = set() ##
     processed = []
 
     for i, result in enumerate(raw_results):
         content = result.get("content", "").strip()
 
+        norm_url = normalize_url(url) ##
+        if norm_url in seen_urls:
+            print(f"[URL 중복 제거] {url}")
+            continue
+        seen_urls.add(norm_url)
+        
         # 중복 내용 제거 (앞 50자 기준)
         content_key = content[:50]
         if content_key in seen_contents:
