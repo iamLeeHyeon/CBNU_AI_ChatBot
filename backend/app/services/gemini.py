@@ -255,3 +255,10 @@ async def optimize_search_query(user_query: str, messages: List[Message]) -> str
                    else f"충북대학교 {user_query}"
         print(f"[폴백 쿼리] {fallback}")
         return fallback
+    
+def evaluate_and_rank_results(query: str, raw_results: list) -> list:
+    """
+    검색 결과를 Gemini가 평가해서 관련도 높은 순으로 정렬 후 상위만 반환.
+    """
+    if not raw_results:
+        return []
