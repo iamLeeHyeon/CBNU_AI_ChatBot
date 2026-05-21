@@ -317,3 +317,7 @@ def evaluate_and_rank_results(query: str, raw_results: list) -> list:
             return raw_results
 
         return [raw_results[i] for i in top_indices]
+
+    except Exception as e:
+        print(f"[결과 평가 실패] {e} → 전체 결과 사용")
+        return raw_results
