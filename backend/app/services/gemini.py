@@ -293,3 +293,12 @@ def evaluate_and_rank_results(query: str, raw_results: list) -> list:
             generation_config={"temperature": 0.0, "max_output_tokens": 512},
         )
         response = model.generate_content(prompt)
+
+        import json, re
+        raw = response.text.strip()
+        # JSON 파싱 (```json 펜스 제거)
+        raw = re.sub(r"```json|```", "", raw).strip()
+        rankings = json.loads(raw)
+
+        # score 기준 내림차순 정렬
+        rankings.sort(key=lambda x: x["score"], reverse=True)
