@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import MessageBubble from "./MessageBubble";
 
+
+
+
 export default function ChatWindow({ messages, isLoading }) {
   const bottomRef = useRef(null);
 
