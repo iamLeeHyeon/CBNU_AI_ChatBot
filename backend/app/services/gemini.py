@@ -39,8 +39,22 @@ def normalize_url(url: str) -> str:
         "/index.do", "/index.html", "/index.php", "/main.do",
         "/www/index.do", "/www/index.html", "/www/main.do", "/www",
     )
-    if path in default_paths or path.endswith(default_paths):
+    if path in default_paths:
         path = ""
+
+    else:
+        #  경로 뒷부분에 패턴이 붙어있는 경우, 해당 패턴만 슬라이싱.
+        for pattern in default_paths:
+            if path.endswith(pattern):
+                # 패턴 길이만큼 뒤에서부터 슬라이싱.
+                path = path[:-len(pattern)]
+                break # 하나만 매칭되면 종료
+                
+    # 양 끝에 남았을지 모르는 슬래시 정리
+    path = path.strip("/")
+    if path:
+        path = "/" + path
+
 
     return urlunparse((parsed.scheme, host, path, "", "", ""))
 
