@@ -27,22 +27,50 @@ def _get_credentials(student_id: str | None = None, password: str | None = None)
 async def _login(page: Page, student_id: str, password: str) -> None:
     """
     Playwright로 LMS 로그인 페이지에 접속 후 학번/비밀번호를 입력합니다.
-    로그인 실패 시 예외를 발생시킵니다.
     """
     await page.goto(LMS_LOGIN_URL)
 
-    # 학번 입력란에 학번 입력
-    await page.fill("#username", student_id)
-    # 비밀번호 입력란에 비밀번호 입력
-    await page.fill("#password", password)
-    # 로그인 버튼 클릭
-    await page.click("#loginbtn")
+    try:
+        # 요소를 못 찾을 경우 30초 무한 대기하는 것을 막기 위해 timeout 5초 설정
+        await page.fill("#input-username", student_id, timeout=5000)
+        await page.fill("#input-password", password, timeout=5000)
+        await page.click("button[name='loginbutton']", timeout=5000)
+        
+        # [핵심] 로그인 버튼 클릭 후, 서버 처리가 완료될 때까지 안전하게 5초 대기
+        await page.wait_for_load_state("networkidle", timeout=5000) 
+        
 
-    # 로그인 실패 메시지가 있으면 예외 처리
-    error = page.locator(".loginerrors")
-    if await error.count() > 0:
+
+        
+    except Exception as e:
+        # 아이디 칸이나 버튼을 5초 안에 못 찾으면 멈추지 말고 즉시 프론트엔드에 에러 던지기
+        raise ValueError("LMS 사이트의 구조가 달라서 입력칸을 찾을 수 없습니다.")
+
+    if "login" in page.url:
         raise ValueError("LMS 로그인 실패: 학번 또는 비밀번호를 확인하세요.")
 
+# 💡 [해결 2] 이름 추출 로직 개선
+    try:
+        await page.click(".btn-userinfo img.userpicture", timeout=3000)
+
+        # 👇 이 부분을 직접 찾으신 h4.username으로 수정합니다.
+        user_name_el = page.locator("h4.username").first
+        
+        # 요소가 화면에 나타날 때까지 최대 3초만 기다립니다.
+        await user_name_el.wait_for(timeout=3000)
+        user_name = await user_name_el.inner_text()
+        
+        # '홍길동(20201234)' 처럼 학번이 같이 나오면 이름만 자르거나, 불필요한 공백 제거
+        clean_name = user_name.split('(')[0].strip()
+        
+        if clean_name:
+            return clean_name
+        else:
+            return "학우"
+            
+    except Exception as e:
+        print(f"⚠️ 이름 파싱 실패: {e}")
+        return "학우"
 
 # ── 4. 수강 중인 강의 목록 가져오기 ───────────────────────────────────────────
 async def _get_courses(page: Page) -> list[dict]:
@@ -156,7 +184,7 @@ async def _crawl(student_id: str, password: str) -> dict:
 
         try:
             # 로그인
-            await _login(page, student_id, password)
+            user_name = await _login(page, student_id, password)
             # 수강 강의 목록
             courses = await _get_courses(page)
 
@@ -171,7 +199,9 @@ async def _crawl(student_id: str, password: str) -> dict:
                     "assignments": assignments,
                 })
 
-            return {"courses": result}
+            return {"courses": result, "user_name": user_name}
+        except ValueError as ve:
+            raise ve    
         finally:
             # 성공/실패 관계없이 브라우저 반드시 종료
             await browser.close()
@@ -211,19 +241,13 @@ def get_all_materials(courses: list[dict]) -> list[dict]:
 def get_lms_data(student_id: str | None = None, password: str | None = None) -> dict:
     """
     FastAPI 엔드포인트에서 호출하는 동기 진입점입니다.
-    asyncio.run()으로 비동기 크롤링을 실행하고 결과를 반환합니다.
-    반환 형태:
-    {
-        "courses": [...],           # 강의별 자료+과제
-        "assignments": [...],       # 전체 과제 (마감일 정렬)
-        "materials": [...]          # 전체 강의자료
-    }
     """
     sid, pw = _get_credentials(student_id, password)
     data = asyncio.run(_crawl(sid, pw))
 
     courses = data["courses"]
     return {
+        "user_name": data["user_name"],
         "courses": courses,
         "assignments": sort_assignments_by_due(courses),
         "materials": get_all_materials(courses),

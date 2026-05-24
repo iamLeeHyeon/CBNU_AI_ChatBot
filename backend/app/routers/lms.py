@@ -2,6 +2,8 @@ import uuid
 from fastapi import APIRouter, HTTPException, Cookie, Response
 from typing import Optional
 
+from fastapi.concurrency import run_in_threadpool
+
 # 스키마는 두 브랜치에서 필요한 것만 가져옵니다.
 from app.models.schemas import LMSLoginRequest
 # 팀원이 만든 크롤러 모듈을 임포트합니다.
@@ -24,7 +26,7 @@ async def lms_login(req: LMSLoginRequest, response: Response):
     
     try:
         # 팀원의 크롤러 함수 호출
-        crawled_data = get_lms_data(student_id, req.password)
+        crawled_data = await run_in_threadpool(get_lms_data, student_id, req.password)
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except Exception as e:
@@ -45,7 +47,7 @@ async def lms_login(req: LMSLoginRequest, response: Response):
         samesite="lax",
         max_age=60 * 60 * 8,  # 8시간 유지
     )
-    return {"success": True, "message": "로그인 및 데이터 동기화 완료"}
+    return {"success": True, "message": "로그인 및 데이터 동기화 완료","user_name": crawled_data.get("user_name","학우")}
 
 
 @router.get("/assignments")

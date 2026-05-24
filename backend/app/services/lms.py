@@ -38,9 +38,17 @@ def get_token(username: str, password: str) -> str:
 def get_user_info(token: str) -> dict:
     """로그인한 사용자 기본 정보 반환."""
     data = _rest(token, "core_webservice_get_site_info")
+
+    fullname = data.get("fullname", "").strip()
+
+    if not fullname:
+        firstname = data.get("firstname", "").strip()
+        lastname = data.get("lastname", "").strip()
+        fullname = f"{lastname}{firstname}".strip()
+
     return {
         "user_id": data.get("userid"),
-        "user_name": data.get("fullname", ""),
+        "user_name": fullname,
     }
 
 
