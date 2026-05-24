@@ -2,134 +2,76 @@ import uuid
 from fastapi import APIRouter, HTTPException, Cookie, Response
 from typing import Optional
 
-from app.models.schemas import (
-    LMSLoginRequest, LMSLoginResponse,
-    LMSDataResponse, Course, Assignment, Grade, CalendarEvent,
-)
-from app.services import lms as lms_service
+# 스키마는 두 브랜치에서 필요한 것만 가져옵니다.
+from app.models.schemas import LMSLoginRequest
+# 팀원이 만든 크롤러 모듈을 임포트합니다.
+from app.crawler.lms_crawler import get_lms_data
 
 router = APIRouter(prefix="/api/lms", tags=["lms"])
 
-# 서버 메모리 세션 저장소: { session_id: { "token": ..., "user_id": ..., "user_name": ... } }
+# 서버 메모리 세션 저장소: { session_id: { "student_id": ..., "data": ... } }
+# (팀원의 불안전한 global 변수 대신 이 방식을 사용합니다)
 _sessions: dict[str, dict] = {}
 
 
-def _get_session(session_id: Optional[str]) -> dict:
-    """세션 ID로 세션 데이터 조회. 없으면 401."""
-    if not session_id or session_id not in _sessions:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    return _sessions[session_id]
-
-
-@router.post("/login", response_model=LMSLoginResponse)
+@router.post("/login")
 async def lms_login(req: LMSLoginRequest, response: Response):
     """
-    LMS 로그인.
-    성공 시 서버 세션에 토큰 저장, 클라이언트엔 세션 쿠키만 반환.
+    학번과 비밀번호로 LMS에 로그인하고 크롤링 데이터를 세션에 저장합니다.
     """
+    # req.username인지 req.student_id인지는 스키마 정의에 따라 다를 수 있으니 유연하게 처리
+    student_id = getattr(req, 'student_id', getattr(req, 'username', ''))
+    
     try:
-        token = lms_service.get_token(req.username, req.password)
+        # 팀원의 크롤러 함수 호출
+        crawled_data = get_lms_data(student_id, req.password)
     except ValueError as e:
-        return LMSLoginResponse(success=False, message=str(e))
-    except Exception:
-        return LMSLoginResponse(success=False, message="LMS 서버에 연결할 수 없습니다.")
+        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LMS 서버 연결 실패: {str(e)}")
 
-    try:
-        info = lms_service.get_user_info(token)
-    except Exception:
-        info = {"user_id": None, "user_name": ""}
-
+    # 안전한 고유 세션 발급
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
-        "token": token,
-        "user_id": info["user_id"],
-        "user_name": info["user_name"],
+        "student_id": student_id,
+        "data": crawled_data  # 크롤링한 데이터를 해당 유저의 세션에만 보관
     }
 
+    # 브라우저에 쿠키 심기
     response.set_cookie(
         key="lms_session",
         value=session_id,
-        httponly=True,   # JS에서 접근 불가
+        httponly=True,   # JS에서 접근 불가 (보안)
         samesite="lax",
-        max_age=60 * 60 * 8,  # 8시간
+        max_age=60 * 60 * 8,  # 8시간 유지
     )
-    return LMSLoginResponse(success=True, user_name=info["user_name"])
+    return {"success": True, "message": "로그인 및 데이터 동기화 완료"}
+
+
+@router.get("/assignments")
+async def lms_assignments(lms_session: Optional[str] = Cookie(default=None)):
+    """현재 로그인된 세션의 과제 목록을 반환합니다."""
+    if not lms_session or lms_session not in _sessions:
+        raise HTTPException(status_code=401, detail="먼저 /api/lms/login으로 로그인하세요.")
+    
+    session_data = _sessions[lms_session]["data"]
+    return {"assignments": session_data.get("assignments", [])}
+
+
+@router.get("/materials")
+async def lms_materials(lms_session: Optional[str] = Cookie(default=None)):
+    """현재 로그인된 세션의 강의자료 목록을 반환합니다."""
+    if not lms_session or lms_session not in _sessions:
+        raise HTTPException(status_code=401, detail="먼저 /api/lms/login으로 로그인하세요.")
+    
+    session_data = _sessions[lms_session]["data"]
+    return {"materials": session_data.get("materials", [])}
 
 
 @router.post("/logout")
 async def lms_logout(response: Response, lms_session: Optional[str] = Cookie(default=None)):
-    """세션 삭제."""
+    """로그아웃 및 세션 파기"""
     if lms_session and lms_session in _sessions:
         del _sessions[lms_session]
     response.delete_cookie("lms_session")
     return {"success": True}
-
-
-@router.get("/me")
-async def lms_me(lms_session: Optional[str] = Cookie(default=None)):
-    """현재 로그인 상태 확인."""
-    if not lms_session or lms_session not in _sessions:
-        return {"logged_in": False}
-    session = _sessions[lms_session]
-    return {"logged_in": True, "user_name": session["user_name"]}
-
-
-@router.get("/data", response_model=LMSDataResponse)
-async def lms_data(lms_session: Optional[str] = Cookie(default=None)):
-    """
-    수강강좌 / 과제 / 성적 / 캘린더 일괄 반환.
-    로그인 쿠키 필요.
-    """
-    session = _get_session(lms_session)
-    token = session["token"]
-    user_id = session["user_id"]
-
-    # 1. 강좌 목록
-    try:
-        raw_courses = lms_service.get_courses(token)
-    except Exception:
-        raw_courses = []
-
-    courses = [Course(**c) for c in raw_courses]
-    course_ids = [c.id for c in courses]
-
-    # 2. 과제 목록
-    try:
-        raw_assigns = lms_service.get_assignments(token, course_ids)
-    except Exception:
-        raw_assigns = []
-
-    # 3. 제출 여부 (과제가 있을 때만)
-    if raw_assigns:
-        try:
-            assign_ids = [a["id"] for a in raw_assigns]
-            submitted_map = lms_service.get_submission_statuses(token, assign_ids)
-            for a in raw_assigns:
-                a["submitted"] = submitted_map.get(a["id"], False)
-        except Exception:
-            pass
-
-    assignments = [Assignment(**a) for a in raw_assigns]
-
-    # 4. 성적
-    try:
-        raw_grades = lms_service.get_grades(token, user_id) if user_id else []
-    except Exception:
-        raw_grades = []
-
-    grades = [Grade(**g) for g in raw_grades]
-
-    # 5. 캘린더
-    try:
-        raw_calendar = lms_service.get_calendar(token, user_id) if user_id else []
-    except Exception:
-        raw_calendar = []
-
-    calendar = [CalendarEvent(**e) for e in raw_calendar]
-
-    return LMSDataResponse(
-        courses=courses,
-        assignments=assignments,
-        grades=grades,
-        calendar=calendar,
-    )

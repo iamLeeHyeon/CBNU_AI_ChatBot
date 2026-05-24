@@ -17,6 +17,7 @@ class ChatResponse(BaseModel):
     sources: List[str] = []
 
 
+
 # ── LMS 관련 스키마 ──────────────────────────────────────────
 
 class LMSLoginRequest(BaseModel):
@@ -63,3 +64,9 @@ class LMSDataResponse(BaseModel):
     assignments: List[Assignment] = []
     grades: List[Grade] = []
     calendar: List[CalendarEvent] = []
+
+# LMS 로그인 요청 스키마
+class LMSLoginRequest(BaseModel):
+    student_id: str
+    password: str
+
