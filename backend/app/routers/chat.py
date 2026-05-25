@@ -1,47 +1,37 @@
+# ──────────────────────────────────────────────
+#  app/api/router.py
+#  FastAPI 라우터: 요청 수신 → 서비스 호출 → 응답
+#  (비즈니스 로직 없는 얇은 컨트롤러)
+# ──────────────────────────────────────────────
 from fastapi import APIRouter, HTTPException
+
 from app.models.schemas import ChatRequest, ChatResponse
-from app.services.gemini import build_chat_response, optimize_search_query, preprocess_context, evaluate_and_rank_results
-from app.services.tavily import search_web, normalize_url
+from app.services.gemini import build_chat_response, evaluate_and_rank_results, optimize_search_query
+from app.services.tavily import search_web
+from app.services.utils import extract_unique_sources
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-
     if not req.messages:
         raise HTTPException(status_code=400, detail="messages가 비어 있습니다.")
 
-    search_results: list = []
+    ranked_results: list = []
     sources: list[str] = []
 
     if req.use_search:
-        query = req.messages[-1].content
-        optimized_query = await optimize_search_query(query, req.messages)
+        raw_query = req.messages[-1].content
+        optimized_query = await optimize_search_query(raw_query, req.messages)
         print(f"[최적화 쿼리] {optimized_query}")
-        
-        search_results, sources = search_web(query)
-        print(f"[검색 결과 수] {len(search_results)}")          
-        print(f"[검색 결과 내용] {search_results[:1]}")          
-        print(f"[use_search 값] {req.use_search}")   
 
-        #  필터링/중복제거 후 남은 결과에서 sources 추출
-        ranked_results = evaluate_and_rank_results(query, search_results)
+        raw_results = search_web(optimized_query)
+        print(f"[검색 결과 수] {len(raw_results)}")
+        print(f"[검색 결과 샘플] {raw_results[:1]}")
 
-        #  URL 정규화 기반 중복 제거해서 sources 추출
-        seen_urls = set()
-        sources = []    
+        ranked_results = evaluate_and_rank_results(raw_query, raw_results)
+        sources = extract_unique_sources(ranked_results)  # utils에서 일원화된 중복 제거
 
-        for r in ranked_results:
-            url = r.get("url", "")
-            combined = (r.get("title", "") + r.get("content", "") + url).lower()
-            if not any(kw in combined for kw in ["충북대", "chungbuk", "cbnu"]):
-                continue
-            norm = normalize_url(url)
-            if norm in seen_urls:
-                continue
-            seen_urls.add(norm)
-            sources.append(url)
-
-    reply = build_chat_response(req.messages, search_results=search_results)
+    reply = build_chat_response(req.messages, search_results=ranked_results)
     return ChatResponse(reply=reply, sources=sources)
