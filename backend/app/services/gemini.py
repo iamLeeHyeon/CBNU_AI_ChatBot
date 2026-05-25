@@ -1,291 +1,198 @@
-import os
+# ──────────────────────────────────────────────
+#  app/services/gemini.py
+#  Gemini API 연동: 쿼리 최적화 · 결과 평가 · 챗 응답
+# ──────────────────────────────────────────────
+import json
+import re
 import time
-import google.generativeai as genai
-from typing import List
-from app.models.schemas import Message
 from datetime import datetime
-from urllib.parse import urlparse, urlunparse
+from typing import List
 
-SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
-학생, 교직원, 방문자에게 충북대학교에 관한 정확하고 친절한 정보를 제공합니다.
+from app.models.schemas import Message
+from app.services.config import (
+    CBNU_KEYWORDS,
+    GEMINI_CHAT_CONFIG,
+    GEMINI_QUERY_CONFIG,
+    GEMINI_RANK_CONFIG,
+    GEMINI_SUMMARY_CONFIG,
+    HISTORY_RECENT_KEEP,
+    HISTORY_SUMMARY_THRESHOLD,
+    MAX_RETRIES,
+    RANK_MIN_SCORE,
+    RANK_TOP_K,
+    SYSTEM_PROMPT,
+)
+from app.services.gemini_client import get_model
+from app.services.utils import preprocess_context
 
-[답변 원칙]
-1. 반드시 제공된 [참고 자료]를 우선 근거로 삼아 답변하세요.
-2. 참고 자료만으로 답변이 불충분할 경우, 학습된 지식을 보조적으로 활용하되 "공식 확인 필요" 라고 명시하세요.
-3. 참고 자료에 없는 내용은 솔직히 모른다고 하고, 공식 홈페이지(https://www.chungbuk.ac.kr) 확인을 안내하세요.
-4. 오래된 정보(6개월 이상)는 변경 가능성을 언급하세요.
 
-[답변 형식]
-- 핵심 내용을 먼저 제시하고, 세부 내용을 뒤에 서술하세요 (두괄식).
-- 단계적 설명이 필요한 경우 번호 목록을 활용하세요.
-- 불필요한 반복이나 중언부언을 피하고 간결하게 작성하세요.
-- 항상 한국어로 답변하세요.
+# ── 내부 헬퍼 ─────────────────────────────────
 
-[사고 과정]
-답변 생성 전 내부적으로 다음을 수행하세요:
-1. 질문의 핵심 의도 파악
-2. 참고 자료에서 관련 정보 추출
-3. 정보의 최신성 및 신뢰도 판단
-4. 위 과정을 바탕으로 최종 답변 구성
+def _format_messages_as_history(messages: list[Message]) -> list[dict]:
+    """Message 리스트를 Gemini history 포맷으로 변환."""
+    return [
+        {
+            "role": "user" if m.role == "user" else "model",
+            "parts": [m.content],
+        }
+        for m in messages
+    ]
 
-"""
-def normalize_url(url: str) -> str:
-    parsed = urlparse(url.lower().strip())
-    host = parsed.netloc.replace("www.", "")
-    path = parsed.path.rstrip("/")
 
-    # 기본 페이지 경로 패턴 제거 (index.do, /www/index.do 등)
-    default_paths = (
-        "/index.do", "/index.html", "/index.php", "/main.do",
-        "/www/index.do", "/www/index.html", "/www/main.do", "/www",
+def _summarize_history(past_messages: list[Message]) -> str:
+    """오래된 대화를 3줄 이내로 요약."""
+    past_content = "\n".join(f"{m.role}: {m.content}" for m in past_messages)
+    prompt = (
+        "다음 대화에서 충북대학교 관련 핵심 정보(언급된 학과, 일정, 문의 내용 등)만 "
+        "3줄 이내로 요약하세요. 불필요한 인사말은 제외하세요:\n\n"
+        + past_content
     )
-    if path in default_paths:
-        path = ""
-
-    else:
-        #  경로 뒷부분에 패턴이 붙어있는 경우, 해당 패턴만 슬라이싱.
-        for pattern in default_paths:
-            if path.endswith(pattern):
-                # 패턴 길이만큼 뒤에서부터 슬라이싱.
-                path = path[:-len(pattern)]
-                break # 하나만 매칭되면 종료
-                
-    # 양 끝에 남았을지 모르는 슬래시 정리
-    path = path.strip("/")
-    if path:
-        path = "/" + path
+    model = get_model(GEMINI_SUMMARY_CONFIG)
+    response = model.generate_content(prompt)
+    return f"[이전 대화 요약]: {response.text}"
 
 
-    return urlunparse((parsed.scheme, host, path, "", "", ""))
-
-#  검색 결과 전처리: 중복 제거 + 길이 제한 + 날짜/출처 포맷
-def preprocess_context(raw_results: list, max_chars_per_result: int = 600) -> str:
+def _build_history(messages: list[Message]) -> list[dict]:
     """
-    Tavily 검색 결과를 Gemini에 넘기기 전에 정제합니다.
-    - raw_results: Tavily response["results"] 리스트
-    - 각 항목: {"title", "url", "content", "published_date"(optional)}
+    메시지 수에 따라 히스토리를 구성.
+    임계값 초과 시 오래된 부분을 요약으로 대체.
     """
-    if not raw_results:
-        return ""
+    if len(messages) <= HISTORY_SUMMARY_THRESHOLD:
+        return _format_messages_as_history(messages[:-1])
 
-    seen_contents = set()
-    seen_urls = set() 
-    processed = []
+    summary_text = _summarize_history(messages[:-HISTORY_RECENT_KEEP])
+    history = [{"role": "user", "parts": [summary_text]}]
+    history.extend(_format_messages_as_history(messages[-HISTORY_RECENT_KEEP:-1]))
+    return history
 
-    for i, result in enumerate(raw_results):
-        content = result.get("content", "").strip()
 
-        norm_url = normalize_url(url) 
-        if norm_url in seen_urls:
-            print(f"[URL 중복 제거] {url}")
-            continue
-        seen_urls.add(norm_url)
+def _build_user_message(content: str, search_results: list) -> str:
+    """검색 결과 유무에 따라 최종 사용자 메시지를 구성."""
+    context = preprocess_context(search_results)
 
-        combined = (title + content + url).lower()
-        cbnu_keywords = ["충북대", "chungbuk", "cbnu"]
-        if not any(kw in combined for kw in cbnu_keywords):
-            print(f"[필터링] 충북대 무관 결과 제외: {title}")
-            continue
-
-        # 중복 내용 제거 (앞 50자 기준)
-        content_key = content[:50]
-        if content_key in seen_contents:
-            continue
-        seen_contents.add(content_key)
-
-        # 길이 제한
-        if len(content) > max_chars_per_result:
-            content = content[:max_chars_per_result] + "..."
-
-        title = result.get("title", "제목 없음")
-        url = result.get("url", "")
-        date = result.get("published_date", "")
-        date_str = f" ({date})" if date else ""
-
-        processed.append(
-            f"[출처 {i+1}] {title}{date_str}\n"
-            f"URL: {url}\n"
-            f"{content}"
+    if context:
+        return (
+            f"[참고 자료]\n{context}\n\n"
+            f"---\n"
+            f"위 참고 자료를 바탕으로 아래 질문에 답변하세요.\n\n"
+            f"[질문]\n{content}"
         )
 
-    if not processed:
-        return ""
+    return (
+        f"[참고 자료 없음]\n"
+        f"웹 검색 결과가 없습니다. 학습된 지식으로만 답변하되, "
+        f"불확실한 내용은 공식 홈페이지 확인을 안내하세요.\n\n"
+        f"[질문]\n{content}"
+    )
 
-    return "\n\n---\n\n".join(processed)
+
+def _send_with_retry(chat, message: str) -> str:
+    """응답을 전송하고 finish_reason에 따라 재시도 또는 이어쓰기."""
+    for attempt in range(MAX_RETRIES):
+        response = chat.send_message(message)
+        finish_reason = response.candidates[0].finish_reason.name
+
+        if finish_reason == "STOP":
+            return response.text
+
+        print(f"[시도 {attempt + 1}] finish_reason: {finish_reason}")
+
+        if finish_reason == "MAX_TOKENS":
+            followup = chat.send_message("이어서 계속 작성해주세요.")
+            return response.text + followup.text
+
+        if finish_reason in ("SAFETY", "RECITATION"):
+            return "해당 질문에는 답변이 어렵습니다. 충북대학교 공식 홈페이지를 확인해주세요."
+
+        time.sleep(1)
+
+    return response.text
+
+
+# ── Public API ────────────────────────────────
 
 def build_chat_response(messages: List[Message], search_results: list = None) -> str:
-
-    """ 
-    search_results: Tavily의 response["results"] 리스트 (없으면 None)
-    context 문자열 대신 raw results를 받아서 내부에서 전처리합니다.
-    """ 
-
+    """검색 결과를 참고해 Gemini 챗 응답을 생성."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    dynamic_prompt = f"{SYSTEM_PROMPT}\n\n[시스템 정보]\n현재 일시: {now}"
-
-    generation_config = {
-    "temperature": 0.2,    # 낮을수록 정확하고 일관된 답변 (0.0 ~ 2.0), 대답이 너무 일관적인 경우 상향조정
-    "top_p": 0.8,
-    "top_k": 40,
-    "max_output_tokens": 4096, # 답변 길이 제한
-    }
+    system_instruction = f"{SYSTEM_PROMPT}\n\n[시스템 정보]\n현재 일시: {now}"
 
     try:
-        
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            system_instruction=dynamic_prompt,
-            generation_config = generation_config,
-        )
+        model = get_model(GEMINI_CHAT_CONFIG, system_instruction)
 
-        # 히스토리 요약 로직 추가
-        # 대화 내역이 너무 길어지면(예: 15개 이상) 앞부분을 요약하여 전달
-        if len(messages) > 15:
-            past_content = "\n".join(
-                [f"{m.role}: {m.content}" for m in messages[:-10]]
-            )
-            summary_prompt = (
-                "다음 대화에서 충북대학교 관련 핵심 정보(언급된 학과, 일정, 문의 내용 등)만 "
-                "3줄 이내로 요약하세요. 불필요한 인사말은 제외하세요:\n\n"
-                + past_content
-            )
-            summary_response = model.generate_content(summary_prompt)
-            summary_text = f"[이전 대화 요약]: {summary_response.text}"
-                    
-            # 요약본을 첫 번째 히스토리로 넣고, 최근 10개만 유지
-            history = [{"role": "user", "parts": [summary_text]}]
-            history.extend([
-                {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
-                for m in messages[-10:-1]
-            ])
-            
-        else:
-            history = [
-                {"role": "user" if m.role == "user" else "model", "parts": [m.content]}
-                for m in messages[:-1]
-            ]
-        # 토큰 개수 확인 (디버깅용)
+        history = _build_history(messages)
+
         total_tokens = model.count_tokens(str(history)).total_tokens
         print(f"현재 전송 토큰 수: {total_tokens}")
-        print(f"메시지당 평균 토큰: {total_tokens / len(history):.1f}")
 
         chat = model.start_chat(history=history)
-        
-        #  검색 결과 전처리 후 컨텍스트 구성
-        last_content = messages[-1].content
-        context = preprocess_context(search_results) if search_results else ""
-
-        if context:
-            last_content = (
-                f"[참고 자료]\n{context}\n\n"
-                f"---\n"
-                f"위 참고 자료를 바탕으로 아래 질문에 답변하세요. "
-                f"[질문]\n{last_content}"
-            )
-        else:
-            # 검색 결과 없을 때 Gemini에게 명시적으로 알림
-            last_content = (
-                f"[참고 자료 없음]\n"
-                f"웹 검색 결과가 없습니다. 학습된 지식으로만 답변하되, "
-                f"불확실한 내용은 공식 홈페이지 확인을 안내하세요.\n\n"
-                f"[질문]\n{last_content}"
-            )
-
-        #  finish_reason 체크 + 재시도 로직
-        max_retries = 3
-        for attempt in range(max_retries):
-            response = chat.send_message(last_content)
-            finish_reason = response.candidates[0].finish_reason.name
-
-            if finish_reason == "STOP":
-                return response.text
-
-            print(f"[시도 {attempt + 1}] finish_reason: {finish_reason}")
-
-            if finish_reason == "MAX_TOKENS":
-                # 답변이 잘린 경우 이어쓰기 요청
-                followup = chat.send_message("이어서 계속 작성해주세요.")
-                return response.text + followup.text
-
-            if finish_reason in ("SAFETY", "RECITATION"):
-                return "해당 질문에는 답변이 어렵습니다. 충북대학교 공식 홈페이지를 확인해주세요."
-
-            time.sleep(1)
-
-        return response.text
+        user_message = _build_user_message(
+            messages[-1].content,
+            search_results or [],
+        )
+        return _send_with_retry(chat, user_message)
 
     except Exception as e:
         print(f"API 호출 중 오류 발생: {e}")
         return "죄송합니다. 현재 서비스가 원활하지 않습니다. 잠시 후 다시 시도해주세요."
 
+
 async def optimize_search_query(user_query: str, messages: List[Message]) -> str:
-    recent_context = "\n".join(
-        [f"{m.role}: {m.content}" for m in messages[-4:-1]]
-    ) if len(messages) > 1 else ""
+    """사용자 질문을 웹 검색에 적합한 구체적인 쿼리로 변환."""
+    recent_context = (
+        "\n".join(f"{m.role}: {m.content}" for m in messages[-4:-1])
+        if len(messages) > 1
+        else "없음"
+    )
 
-    prompt = f"""사용자의 질문을 웹 검색에 적합한 구체적인 검색어로 변환하세요.
-
-    규칙:
-    1. "거기", "그거", "그 학과", "알려줘", "추려줘" 같은 대명사/동사는 앞 대화를 보고 반드시 구체적 명사로 교체하세요.
-    2. 충북대학교 관련 질문이면 "충북대학교" 키워드를 포함하세요.
-    3. 검색어는 반드시 10자 이상으로 작성하세요.
-    4. 검색어만 출력하고 설명, 따옴표, 부연은 절대 쓰지 마세요.
-
-    [이전 대화]
-    {recent_context if recent_context else "없음"}
-
-    [사용자 질문]
-    {user_query}
-
-    [검색어]"""
+    prompt = (
+        f"사용자의 질문을 웹 검색에 적합한 구체적인 검색어로 변환하세요.\n\n"
+        f"규칙:\n"
+        f"1. '거기', '그거', '그 학과', '알려줘', '추려줘' 같은 대명사/동사는 앞 대화를 보고 반드시 구체적 명사로 교체하세요.\n"
+        f"2. 충북대학교 관련 질문이면 '충북대학교' 키워드를 포함하세요.\n"
+        f"3. 검색어는 반드시 10자 이상으로 작성하세요.\n"
+        f"4. 검색어만 출력하고 설명, 따옴표, 부연은 절대 쓰지 마세요.\n\n"
+        f"[이전 대화]\n{recent_context}\n\n"
+        f"[사용자 질문]\n{user_query}\n\n"
+        f"[검색어]"
+    )
 
     try:
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            generation_config={"temperature": 0.0, "max_output_tokens": 64},
-        )
+        model = get_model(GEMINI_QUERY_CONFIG)
         response = model.generate_content(prompt)
 
-        #  finish_reason 먼저 확인 후 text 접근 (SAFETY 등 비정상 종료 대비)
         finish_reason = response.candidates[0].finish_reason.name
         if finish_reason != "STOP":
             raise ValueError(f"finish_reason: {finish_reason}")
 
         optimized = response.text.strip()
-
-        #  중복 "충북대학교" 제거 후 길이 체크
         if len(optimized) < 10:
             raise ValueError(f"결과가 너무 짧음: '{optimized}'")
 
         print(f"[쿼리 최적화] '{user_query}' → '{optimized}'")
         return optimized
-    
+
     except Exception as e:
-        #  폴백: 이미 충북대 포함이면 그대로, 없으면 앞에 붙이기
         print(f"[쿼리 최적화 실패] {e}")
-        fallback = user_query if "충북대" in user_query or "cbnu" in user_query.lower() \
-                   else f"충북대학교 {user_query}"
+        fallback = (
+            user_query
+            if any(kw in user_query or kw in user_query.lower() for kw in CBNU_KEYWORDS)
+            else f"충북대학교 {user_query}"
+        )
         print(f"[폴백 쿼리] {fallback}")
         return fallback
-    
+
+
 def evaluate_and_rank_results(query: str, raw_results: list) -> list:
-    """
-    검색 결과를 Gemini가 평가해서 관련도 높은 순으로 정렬 후 상위만 반환.
-    """
+    """검색 결과를 Gemini로 평가해 관련도 높은 상위 결과만 반환."""
     if not raw_results:
         return []
-    
-    # 평가용 요약 텍스트 구성 (전체 내용 다 넣으면 토큰 낭비)
-    candidates = []
-    for i, r in enumerate(raw_results):
-        candidates.append(
-            f"[{i}] 제목: {r.get('title', '')}\n"
-            f"URL: {r.get('url', '')}\n"
-            f"내용: {r.get('content', '')[:300]}"
-        )
-    candidates_str = "\n\n".join(candidates)
+
+    candidates_str = "\n\n".join(
+        f"[{i}] 제목: {r.get('title', '')}\n"
+        f"URL: {r.get('url', '')}\n"
+        f"내용: {r.get('content', '')[:300]}"
+        for i, r in enumerate(raw_results)
+    )
 
     prompt = (
         f"다음은 '{query}'에 대한 웹 검색 결과입니다.\n\n"
@@ -296,35 +203,26 @@ def evaluate_and_rank_results(query: str, raw_results: list) -> list:
         f"2. 정보의 구체성 (0~10)\n"
         f"3. 신뢰할 수 있는 출처 여부 (공식 홈페이지/뉴스/학교 공지 등) (0~10)\n\n"
         f"응답 형식:\n"
-        f"[{{\"index\": 0, \"score\": 25, \"reason\": \"공식 공지사항\"}}, ...]"
+        f'[{{"index": 0, "score": 25, "reason": "공식 공지사항"}}, ...]'
     )
 
     try:
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+        model = get_model(
+            GEMINI_RANK_CONFIG,
             system_instruction="당신은 정보 품질 평가 전문가입니다. JSON만 출력합니다.",
-            generation_config={"temperature": 0.0, "max_output_tokens": 512},
         )
         response = model.generate_content(prompt)
 
-        import json, re
-        raw = response.text.strip()
-        # JSON 파싱 (```json 펜스 제거)
-        raw = re.sub(r"```json|```", "", raw).strip()
-        rankings = json.loads(raw)
-
-        # score 기준 내림차순 정렬
+        raw = re.sub(r"```json|```", "", response.text.strip())
+        rankings: list[dict] = json.loads(raw)
         rankings.sort(key=lambda x: x["score"], reverse=True)
-
-        # 상위 3개만 추출, score 15 미만은 제외
-        top_indices = [
-            r["index"] for r in rankings
-            if r["score"] >= 15
-        ][:3]
 
         for r in rankings:
             print(f"[결과 평가] index={r['index']} score={r['score']} reason={r.get('reason', '')}")
+
+        top_indices = [
+            r["index"] for r in rankings if r["score"] >= RANK_MIN_SCORE
+        ][:RANK_TOP_K]
 
         if not top_indices:
             print("[결과 평가] 기준 충족 결과 없음 → 전체 사용")
