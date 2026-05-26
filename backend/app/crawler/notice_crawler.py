@@ -58,3 +58,19 @@ def filter_by_allowed_domain(results: list[dict]) -> list[dict]:
     filtered = [r for r in results if is_allowed_url(r.get("url", ""))]
     # 필터 후 결과가 없으면 원본 반환 (도메인 범위가 좁을 때 대비)
     return filtered if filtered else results
+
+# ── 7. 결과 포맷 변환 ──────────────────────────────────────────────────────────
+def format_results(results: list[dict], category: str) -> list[dict]:
+    """
+    Tavily 원시 결과를 title/url/content/category 형태의 dict로 변환합니다.
+    category: 'notice' 또는 'academic_calendar'
+    """
+    formatted = []
+    for r in results:
+        formatted.append({
+            "title": r.get("title", "제목 없음"),
+            "url": r.get("url", ""),
+            "content": r.get("content", ""),
+            "category": category,  # 공지사항인지 학사일정인지 구분
+        })
+    return formatted
