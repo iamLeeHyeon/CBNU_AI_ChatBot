@@ -74,3 +74,28 @@ def format_results(results: list[dict], category: str) -> list[dict]:
             "category": category,  # 공지사항인지 학사일정인지 구분
         })
     return formatted
+
+    # ── 8. 통합 진입점 ────────────────────────────────────────────────────────────
+def get_notices() -> dict:
+    """
+    공지사항과 학사일정을 모두 검색해 JSON 형태로 반환합니다.
+    반환 형태:
+    {
+        "notices": [...],
+        "academic_calendar": [...]
+    }
+    """
+    # 공지사항 검색 → 도메인 필터 → 포맷
+    raw_notices = search_notices()
+    filtered_notices = filter_by_allowed_domain(raw_notices)
+    notices = format_results(filtered_notices, category="notice")
+
+    # 학사일정 검색 → 도메인 필터 → 포맷
+    raw_calendar = search_academic_calendar()
+    filtered_calendar = filter_by_allowed_domain(raw_calendar)
+    academic_calendar = format_results(filtered_calendar, category="academic_calendar")
+
+    return {
+        "notices": notices,
+        "academic_calendar": academic_calendar,
+    }
