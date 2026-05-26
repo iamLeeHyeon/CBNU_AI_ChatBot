@@ -19,6 +19,10 @@ def build_chat_response(messages: List[Message], context: str = "", lms_context:
     model = genai.GenerativeModel(
         model_name="gemini-2.5-flash",
         system_instruction=system,
+        generation_config=genai.GenerationConfig(
+            temperature=0.2,
+            max_output_tokens=1024,
+        ),
     )
 
     history = []
