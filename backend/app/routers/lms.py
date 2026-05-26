@@ -1,4 +1,5 @@
 import uuid
+import time
 from fastapi import APIRouter, HTTPException, Cookie, Response
 from typing import Optional
 from fastapi.concurrency import run_in_threadpool
@@ -8,7 +9,29 @@ import app.services.lms as lms_service
 
 router = APIRouter(prefix="/api/lms", tags=["lms"])
 
+# 서버 메모리 세션 저장소: { session_id: { "token": ..., "user_id": ..., "expires_at": ..., "data": {...} } }
 _sessions: dict[str, dict] = {}
+_SESSION_TTL = 60 * 60 * 8  # 8시간 (쿠키 max_age와 동일)
+
+
+def _cleanup_sessions() -> None:
+    """만료된 세션 정리."""
+    now = time.time()
+    expired = [k for k, v in _sessions.items() if now > v.get("expires_at", 0)]
+    for k in expired:
+        del _sessions[k]
+
+
+def _get_session(session_id: Optional[str]) -> dict:
+    """세션 ID로 세션 데이터 조회. 없거나 만료됐으면 401."""
+    _cleanup_sessions()
+    if not session_id or session_id not in _sessions:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    session = _sessions[session_id]
+    if time.time() > session.get("expires_at", 0):
+        del _sessions[session_id]
+        raise HTTPException(status_code=401, detail="세션이 만료됐습니다. 다시 로그인하세요.")
+    return session
 
 
 @router.post("/login")
@@ -58,6 +81,7 @@ async def lms_login(req: LMSLoginRequest, response: Response):
         "student_id": req.student_id,
         "token": token,
         "user_id": user_id,
+        "expires_at": time.time() + _SESSION_TTL,
         "data": {
             "user_name": user_name,
             "courses": raw_courses,       # [{id, full_name, short_name}]
@@ -79,10 +103,7 @@ async def lms_login(req: LMSLoginRequest, response: Response):
 
 @router.post("/sync")
 async def lms_sync(lms_session: Optional[str] = Cookie(default=None)):
-    if not lms_session or lms_session not in _sessions:
-        raise HTTPException(status_code=401, detail="세션이 만료되었습니다. 다시 로그인하세요.")
-
-    session = _sessions[lms_session]
+    session = _get_session(lms_session)
     token = session["token"]
     user_id = session["user_id"]
 
@@ -126,16 +147,14 @@ async def lms_sync(lms_session: Optional[str] = Cookie(default=None)):
 
 @router.get("/assignments")
 async def lms_assignments(lms_session: Optional[str] = Cookie(default=None)):
-    if not lms_session or lms_session not in _sessions:
-        raise HTTPException(status_code=401, detail="먼저 /api/lms/login으로 로그인하세요.")
-    return {"assignments": _sessions[lms_session]["data"].get("assignments", [])}
+    session = _get_session(lms_session)
+    return {"assignments": session["data"].get("assignments", [])}
 
 
 @router.get("/materials")
 async def lms_materials(lms_session: Optional[str] = Cookie(default=None)):
-    if not lms_session or lms_session not in _sessions:
-        raise HTTPException(status_code=401, detail="먼저 /api/lms/login으로 로그인하세요.")
-    return {"materials": _sessions[lms_session]["data"].get("materials", [])}
+    session = _get_session(lms_session)
+    return {"materials": session["data"].get("materials", [])}
 
 
 @router.post("/logout")
@@ -148,9 +167,8 @@ async def lms_logout(response: Response, lms_session: Optional[str] = Cookie(def
 
 @router.get("/dashboard")
 async def lms_dashboard(lms_session: Optional[str] = Cookie(default=None)):
-    if not lms_session or lms_session not in _sessions:
-        raise HTTPException(status_code=401, detail="세션이 만료되었습니다. 다시 로그인하세요.")
-    data = _sessions[lms_session]["data"]
+    session = _get_session(lms_session)
+    data = session["data"]
     return {
         "success": True,
         "user_name": data.get("user_name", "학우"),
