@@ -1,14 +1,21 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 
 
 class Message(BaseModel):
     role: str  # "user" | "assistant"
-    content: str
-
+    content: str = Field(min_length=1, max_length=2000)
+    
+    # role 값 검증
+    @field_validator("role")
+    @classmethod
+    def role_must_be_valid(cls, v):
+        if v not in ("user", "assistant"):
+            raise ValueError("role은 user 또는 assistant여야 합니다.")
+        return v
 
 class ChatRequest(BaseModel):
-    messages: List[Message]
+    messages: List[Message] = Field(min_length=1, max_length=50)
     use_search: bool = False
 
 
@@ -20,8 +27,8 @@ class ChatResponse(BaseModel):
 # ── LMS 관련 스키마 ──────────────────────────────────────────
 
 class LMSLoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=1, max_length=50)
 
 
 class LMSLoginResponse(BaseModel):
