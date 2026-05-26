@@ -77,3 +77,17 @@ async def lms_logout(response: Response, lms_session: Optional[str] = Cookie(def
         del _sessions[lms_session]
     response.delete_cookie("lms_session")
     return {"success": True}
+
+@router.get("/dashboard")
+async def lms_dashboard(lms_session: Optional[str] = Cookie(default=None)):
+    """현재 로그인된 세션의 대시보드 통합 데이터(강좌, 과제, 이름 등)를 반환합니다."""
+    if not lms_session or lms_session not in _sessions:
+        raise HTTPException(status_code=401, detail="세션이 만료되었습니다. 다시 로그인하세요.")
+    
+    session_info = _sessions[lms_session]
+    return {
+        "success": True,
+        "user_name": session_info["data"].get("user_name", "학우"),
+        "courses": session_info["data"].get("courses", []),
+        "assignments": session_info["data"].get("assignments", [])
+    }    

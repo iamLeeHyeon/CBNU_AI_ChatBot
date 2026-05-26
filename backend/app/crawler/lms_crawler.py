@@ -1,6 +1,9 @@
 import os
+import datetime 
 import asyncio
 from playwright.async_api import async_playwright, Page, Browser
+
+
 
 # ── 1. LMS 기본 상수 ──────────────────────────────────────────────────────────
 # 충북대 LMS 접속 URL과 각 페이지 경로를 상수로 관리합니다.
@@ -72,27 +75,47 @@ async def _login(page: Page, student_id: str, password: str) -> None:
         print(f"⚠️ 이름 파싱 실패: {e}")
         return "학우"
 
-# ── 4. 수강 중인 강의 목록 가져오기 ───────────────────────────────────────────
+
+
+# ── 4. 수강 중인 강의 목록 가져오기 (수정본) ───────────────────────────────────────────
 async def _get_courses(page: Page) -> list[dict]:
-    """
-    LMS 대시보드에서 현재 수강 중인 강의 목록을 파싱합니다.
-    반환 형태: [{"name": 강의명, "url": 강의 URL}, ...]
-    """
     await page.goto(LMS_DASHBOARD_URL)
+    await page.wait_for_selector('div[data-region="courses-view"]', timeout=10000)
+    
+    try:
+        filter_btn = page.locator("#groupingdropdown")
+        await filter_btn.click(timeout=3000)
+        in_progress_option = page.locator('.dropdown-menu[aria-labelledby="groupingdropdown"] a:has-text("progress"), .dropdown-menu[aria-labelledby="groupingdropdown"] a:has-text("진행")').first
+        await in_progress_option.click(timeout=3000)
+        await page.wait_for_timeout(2000)
+    except Exception:
+        pass
 
-    # 강의 카드 목록 선택 (LMS Moodle 기본 구조 기준)
-    course_links = page.locator(".coursename a")
-    count = await course_links.count()
+    # [핵심 1] '최근 학습한 강좌' 구역을 피하기 위해 courses-view 하위의 카드만 타겟팅
+    course_cards = page.locator('div[data-region="courses-view"] .card.dashboard-card[data-region="course-content"]')
+    count = await course_cards.count()
 
-    courses = []
+    courses_dict = {} # [핵심 2] URL을 키값으로 사용하여 완벽한 중복 제거
+    
     for i in range(count):
-        link = course_links.nth(i)
-        name = await link.inner_text()
-        url = await link.get_attribute("href")
-        courses.append({"name": name.strip(), "url": url})
+        card = course_cards.nth(i)
+        
+        link_el = card.locator('a[tabindex="-1"]').first
+        url = await link_el.get_attribute("href") if await link_el.count() > 0 else ""
+        
+        name_el = card.locator('.coursename span.multiline')
+        if await name_el.count() > 0:
+            raw_name = await name_el.inner_text()
+            clean_name = raw_name.strip()
+        else:
+            continue # 🚨 이름이 안 찾아지는 찌꺼기 카드는 과감히 스킵!
+            
+        # URL이 정상적이고, 딕셔너리에 아직 등록되지 않은 강좌만 추가
+        if url and url not in courses_dict:
+            courses_dict[url] = {"name": clean_name, "url": url}
 
-    return courses
-
+    # 딕셔너리의 값들만 리스트로 변환하여 반환
+    return list(courses_dict.values())
 
 # ── 5. 강의자료 목록 크롤링 ───────────────────────────────────────────────────
 async def _get_materials(page: Page, course_url: str) -> list[dict]:
@@ -128,39 +151,67 @@ async def _get_materials(page: Page, course_url: str) -> list[dict]:
     return materials
 
 
-# ── 6. 과제 목록 크롤링 ───────────────────────────────────────────────────────
+
+
+
+
+# ── 6. 과제 목록 크롤링 (수정본) ───────────────────────────────────────────────────────
 async def _get_assignments(page: Page, course_url: str) -> list[dict]:
     """
-    개별 강의 페이지에서 과제 목록과 마감일, 제출 여부를 파싱합니다.
-    반환 형태: [{"title": 과제명, "due_date": 마감일, "submitted": bool}, ...]
+    개별 강의의 '과제 전용 페이지'로 이동하여 마감일과 제출 여부를 파싱합니다.
+    기한이 지났거나 제출 완료된 과제는 제외합니다.
     """
-    await page.goto(course_url)
+    # [핵심 1] 강의 메인 화면(course/view.php) URL을 과제 전용 화면(mod/assign/index.php) URL로 변환!
+    assign_url = course_url.replace("course/view.php", "mod/assign/index.php")
+    await page.goto(assign_url)
+    
+    # 만약 과제가 하나도 없는 강의라면 테이블이 없을 수 있으므로 예외 처리
+    try:
+        await page.wait_for_selector("table.generaltable tbody tr", timeout=3000)
+    except Exception:
+        return [] # 과제 없음
 
-    # 과제 activity 항목 선택 (assign = 과제)
-    items = page.locator(".activity.assign")
-    count = await items.count()
+    rows = page.locator("table.generaltable tbody tr")
+    count = await rows.count()
 
     assignments = []
-    for i in range(count):
-        item = items.nth(i)
-        # 과제 제목
-        title_el = item.locator(".instancename")
-        title = await title_el.inner_text() if await title_el.count() > 0 else "제목 없음"
-        # 마감일
-        date_el = item.locator(".date")
-        due_date = await date_el.inner_text() if await date_el.count() > 0 else ""
-        # 제출 여부: 'submitted' 클래스가 있으면 제출 완료
-        submitted = await item.locator(".submitted").count() > 0
+    now = datetime.datetime.now() # 현재 시간 (기한 만료 비교용)
 
+    for i in range(count):
+        row = rows.nth(i)
+        
+        # 테이블의 가로줄(구분선)이나 빈 칸 건너뛰기
+        if await row.locator("td.c1 a").count() == 0:
+            continue
+
+        # HTML 구조에 맞춰 텍스트 추출 (c1=과제명, c2=종료일시, c3=제출물)
+        title = await row.locator("td.c1 a").inner_text()
+        due_date_str = await row.locator("td.c2").inner_text()
+        status_str = await row.locator("td.c3").inner_text()
+
+        # [핵심 2] 이미 "제출 완료"한 과제는 목록에서 아예 삭제
+        if "제출 완료" in status_str:
+            continue
+            
+        # [핵심 3] 마감 기한이 지난 과제 필터링
+        try:
+            # due_date_str ("2026-06-1 23:00")을 파이썬 시간 데이터로 변환
+            due_date = datetime.datetime.strptime(due_date_str.strip(), "%Y-%m-%d %H:%M")
+            if due_date < now:
+                continue # 현재 시간보다 과거면 스킵!
+        except ValueError:
+            pass # 혹시 날짜가 "-" 거나 형식이 다르면 그냥 통과시킴
+
+        # 남은 진짜 '해야 할 과제'들만 리스트에 추가
+        clean_title = title.replace("\xa0", " ").strip()
+        
         assignments.append({
-            "title": title.replace("\xa0숨기기", "").strip(),
-            "due_date": due_date.strip(),
-            "submitted": submitted,
+            "title": clean_title,
+            "due_date": due_date_str.strip(),
+            "submitted": False, # 위에서 제출 완료를 다 걸렀으므로 여기 오는 건 무조건 미제출(False)입니다.
         })
 
     return assignments
-
-
 # ── 7. 전체 데이터 수집 파이프라인 ────────────────────────────────────────────
 async def _crawl(student_id: str, password: str) -> dict:
     """
@@ -179,7 +230,7 @@ async def _crawl(student_id: str, password: str) -> dict:
     """
     async with async_playwright() as pw:
         # headless=True: 브라우저 창 없이 백그라운드 실행
-        browser: Browser = await pw.chromium.launch(headless=True)
+        browser: Browser = await pw.chromium.launch(headless=False)
         page: Page = await browser.new_page()
 
         try:
@@ -207,22 +258,23 @@ async def _crawl(student_id: str, password: str) -> dict:
             await browser.close()
 
 
-# ── 8. 과제 목록 마감일 기준 정렬 ─────────────────────────────────────────────
+# ── 8. 과제 목록 마감일 기준 정렬 (수정본) ─────────────────────────────────────────────
 def sort_assignments_by_due(courses: list[dict]) -> list[dict]:
-    """
-    전체 강의의 과제를 하나의 리스트로 합쳐 마감일 기준 오름차순 정렬합니다.
-    마감일 없는 항목은 맨 뒤로 보냅니다.
-    """
     all_assignments = []
     for course in courses:
         for assignment in course.get("assignments", []):
-            # 어느 강의 과제인지 추적하기 위해 course_name 추가
             all_assignments.append({**assignment, "course_name": course["name"]})
 
-    # 마감일 없는 경우 "~" 문자열로 맨 뒤 정렬
-    all_assignments.sort(key=lambda a: a.get("due_date") or "~")
-    return all_assignments
+    def get_sort_key(a):
+        date_str = a.get("due_date", "")
+        # 마감일 정보가 없으면 정렬 순서를 맨 뒤로(아주 먼 미래로 취급) 미룹니다.
+        if not date_str or "표기 없음" in date_str:
+            return "9999-12-31" 
+        return date_str
 
+    # 마감일 문자열 오름차순(빠른 날짜가 먼저)으로 정렬
+    all_assignments.sort(key=get_sort_key)
+    return all_assignments
 
 # ── 9. 강의자료 목록 통합 반환 ────────────────────────────────────────────────
 def get_all_materials(courses: list[dict]) -> list[dict]:
@@ -246,6 +298,7 @@ def get_lms_data(student_id: str | None = None, password: str | None = None) -> 
     data = asyncio.run(_crawl(sid, pw))
 
     courses = data["courses"]
+
     return {
         "user_name": data["user_name"],
         "courses": courses,
