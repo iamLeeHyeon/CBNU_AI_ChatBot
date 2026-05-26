@@ -165,7 +165,7 @@ return (
 
       {/* 중앙 메인 영역 (팀원들 요구사항 구현부) */}
       <main className="flex-1 overflow-y-auto p-6">
-        <LMSDashboard />
+        <LMSDashboard onLogout={handleLogout} />
       </main>
 
       {/* 우측 하단 플로팅 챗봇 (기존 채팅 UI) */}
