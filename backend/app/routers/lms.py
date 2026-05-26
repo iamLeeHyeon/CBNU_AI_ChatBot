@@ -1,4 +1,5 @@
 import uuid
+import time
 from fastapi import APIRouter, HTTPException, Cookie, Response
 from typing import Optional
 
@@ -10,15 +11,29 @@ from app.services import lms as lms_service
 
 router = APIRouter(prefix="/api/lms", tags=["lms"])
 
-# 서버 메모리 세션 저장소: { session_id: { "token": ..., "user_id": ..., "user_name": ... } }
+# 서버 메모리 세션 저장소: { session_id: { "token": ..., "user_id": ..., "user_name": ..., "expires_at": ... } }
 _sessions: dict[str, dict] = {}
+_SESSION_TTL = 60 * 60 * 8  # 8시간 (쿠키 max_age와 동일)
+
+
+def _cleanup_sessions() -> None:
+    """만료된 세션 정리."""
+    now = time.time()
+    expired = [k for k, v in _sessions.items() if now > v["expires_at"]]
+    for k in expired:
+        del _sessions[k]
 
 
 def _get_session(session_id: Optional[str]) -> dict:
-    """세션 ID로 세션 데이터 조회. 없으면 401."""
+    """세션 ID로 세션 데이터 조회. 없거나 만료됐으면 401."""
+    _cleanup_sessions()
     if not session_id or session_id not in _sessions:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    return _sessions[session_id]
+    session = _sessions[session_id]
+    if time.time() > session["expires_at"]:
+        del _sessions[session_id]
+        raise HTTPException(status_code=401, detail="세션이 만료됐습니다. 다시 로그인하세요.")
+    return session
 
 
 @router.post("/login", response_model=LMSLoginResponse)
@@ -44,6 +59,7 @@ async def lms_login(req: LMSLoginRequest, response: Response):
         "token": token,
         "user_id": info["user_id"],
         "user_name": info["user_name"],
+        "expires_at": time.time() + _SESSION_TTL,
     }
 
     response.set_cookie(
