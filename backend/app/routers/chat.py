@@ -1,37 +1,70 @@
 # ──────────────────────────────────────────────
-#  app/api/router.py
-#  FastAPI 라우터: 요청 수신 → 서비스 호출 → 응답
-#  (비즈니스 로직 없는 얇은 컨트롤러)
+#  app/api/chat.py
+#  FastAPI 라우터 - SSE 스트리밍 응답
 # ──────────────────────────────────────────────
-from fastapi import APIRouter, HTTPException
+import asyncio
+import json
 
-from app.models.schemas import ChatRequest, ChatResponse
-from app.services.gemini import build_chat_response, evaluate_and_rank_results, optimize_search_query
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from app.models.schemas import ChatRequest
+from app.services.gemini import stream_chat_response, evaluate_and_rank_results, optimize_search_query
 from app.services.tavily import search_web
 from app.services.utils import extract_unique_sources
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
 
-@router.post("/chat", response_model=ChatResponse)
+async def _event_stream(req: ChatRequest):
+    """
+    SSE 스트림 제너레이터.
+    청크 타입:
+      {"type": "token",   "value": "글자..."}   ← 응답 토큰
+      {"type": "sources", "value": ["url", ...]} ← 출처 (스트림 끝에 1회)
+      {"type": "done"}                           ← 종료 신호
+      {"type": "error",   "value": "메시지"}     ← 오류
+    """
+    try:
+        ranked_results: list = []
+        sources: list[str] = []
+
+        if req.use_search:
+            raw_query = req.messages[-1].content
+            optimized_query = await optimize_search_query(raw_query, req.messages)
+            print(f"[최적화 쿼리] {optimized_query}")
+
+            raw_results = search_web(optimized_query)
+            print(f"[검색 결과 수] {len(raw_results)}")
+
+            ranked_results = evaluate_and_rank_results(raw_query, raw_results)
+            sources = extract_unique_sources(ranked_results)
+
+        # 토큰 스트리밍
+        async for token in stream_chat_response(req.messages, search_results=ranked_results):
+            yield f"data: {json.dumps({'type': 'token', 'value': token}, ensure_ascii=False)}\n\n"
+
+        # 출처 전송
+        if sources:
+            yield f"data: {json.dumps({'type': 'sources', 'value': sources}, ensure_ascii=False)}\n\n"
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    except Exception as e:
+        print(f"[스트리밍 오류] {e}")
+        yield f"data: {json.dumps({'type': 'error', 'value': '죄송합니다. 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'}, ensure_ascii=False)}\n\n"
+
+
+@router.post("/chat")
 async def chat(req: ChatRequest):
     if not req.messages:
         raise HTTPException(status_code=400, detail="messages가 비어 있습니다.")
 
-    ranked_results: list = []
-    sources: list[str] = []
-
-    if req.use_search:
-        raw_query = req.messages[-1].content
-        optimized_query = await optimize_search_query(raw_query, req.messages)
-        print(f"[최적화 쿼리] {optimized_query}")
-
-        raw_results = search_web(optimized_query)
-        print(f"[검색 결과 수] {len(raw_results)}")
-        print(f"[검색 결과 샘플] {raw_results[:1]}")
-
-        ranked_results = evaluate_and_rank_results(raw_query, raw_results)
-        sources = extract_unique_sources(ranked_results)  # utils에서 일원화된 중복 제거
-
-    reply = build_chat_response(req.messages, search_results=ranked_results)
-    return ChatResponse(reply=reply, sources=sources)
+    return StreamingResponse(
+        _event_stream(req),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Nginx 버퍼링 비활성화
+        },
+    )
