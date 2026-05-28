@@ -1,55 +1,99 @@
 import uuid
 from fastapi import APIRouter, HTTPException, Cookie, Response
 from typing import Optional
-
 from fastapi.concurrency import run_in_threadpool
 
-# 스키마는 두 브랜치에서 필요한 것만 가져옵니다.
 from app.models.schemas import LMSLoginRequest
-# 팀원이 만든 크롤러 모듈을 임포트합니다.
-from app.crawler.lms_crawler import get_lms_data
+
+# 👇 1. 두 가지 무기를 모두 임포트합니다.
+from app.services import lms as lms_api_service       # Plan A: 초고속 API 방식
+from app.crawler.lms_crawler import get_lms_data      # Plan B: 무적의 크롤러 방식
 
 router = APIRouter(prefix="/api/lms", tags=["lms"])
-
-# 서버 메모리 세션 저장소: { session_id: { "student_id": ..., "data": ... } }
-# (팀원의 불안전한 global 변수 대신 이 방식을 사용합니다)
 _sessions: dict[str, dict] = {}
-
 
 @router.post("/login")
 async def lms_login(req: LMSLoginRequest, response: Response):
-    """
-    학번과 비밀번호로 LMS에 로그인하고 크롤링 데이터를 세션에 저장합니다.
-    """
-    # req.username인지 req.student_id인지는 스키마 정의에 따라 다를 수 있으니 유연하게 처리
     student_id = getattr(req, 'student_id', getattr(req, 'username', ''))
+    password = req.password
     
+    crawled_data = None
+    user_name = "학우"
+    
+    # ==========================================
+    # 🥇 Plan A: API(httpx) 방식으로 먼저 시도!
+    # ==========================================
     try:
-        # 팀원의 크롤러 함수 호출
-        crawled_data = await run_in_threadpool(get_lms_data, student_id, req.password)
+        print("🚀 [Plan A] API 방식으로 LMS 로그인 시도 중...")
+        token = lms_api_service.get_token(student_id, password)
+        info = lms_api_service.get_user_info(token)
+        user_name = info.get("user_name", "학우")
+        
+        courses_api = lms_api_service.get_courses(token)
+        course_ids = [c["id"] for c in courses_api]
+        assignments_api = lms_api_service.get_assignments(token, course_ids)
+        
+        # 제출 여부 매핑
+        if assignments_api:
+            assign_ids = [a["id"] for a in assignments_api]
+            submitted_map = lms_api_service.get_submission_statuses(token, assign_ids)
+            for a in assignments_api:
+                a["submitted"] = submitted_map.get(a["id"], False)
+                
+        assignments_api.sort(key=lambda x: x.get("due_date") or "9999-12-31")
+        
+        crawled_data = {
+            "user_name": user_name,
+            "courses": courses_api,
+            "assignments": assignments_api,
+            "materials": [] # 자료는 API에 없으면 빈칸
+        }
+        print("✅ [Plan A] API 로그인 및 데이터 수집 성공!")
+        
     except ValueError as e:
+        # 비밀번호가 진짜 틀린 거면 크롤러도 시도할 필요 없이 바로 입구컷!
         raise HTTPException(status_code=401, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LMS 서버 연결 실패: {str(e)}")
+        
+    except Exception as api_error:
+        # ==========================================
+        # 🥈 Plan B: API 실패 시, 크롤러로 자동 우회!
+        # ==========================================
+        print(f"⚠️ [Plan A 실패] 사유: {api_error}")
+        print("🤖 [Plan B] 무적의 Playwright 크롤러로 우회합니다...")
+        
+        try:
+            crawled_data = await run_in_threadpool(get_lms_data, student_id, password)
+            user_name = crawled_data.get("user_name", "학우")
+            print("✅ [Plan B] 크롤러 우회 로그인 및 수집 성공!")
+            
+        except ValueError as e:
+            raise HTTPException(status_code=401, detail=str(e))
+        except Exception as e:
+            # 크롤러마저 실패하면 그때서야 진짜 서버 에러를 뱉습니다.
+            raise HTTPException(status_code=500, detail=f"LMS 서버 연결 완전 실패 (API/크롤러 모두 다운됨): {str(e)}")
 
-    # 안전한 고유 세션 발급
+    # ------------------------------------------
+    # 성공적으로 모인 데이터를 세션과 쿠키에 저장
+    # ------------------------------------------
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
         "student_id": student_id,
-        "data": crawled_data  # 크롤링한 데이터를 해당 유저의 세션에만 보관
+        "data": crawled_data 
     }
 
-    # 브라우저에 쿠키 심기
     response.set_cookie(
         key="lms_session",
         value=session_id,
-        httponly=True,   # JS에서 접근 불가 (보안)
+        httponly=True,
         samesite="lax",
-        max_age=60 * 60 * 8,  # 8시간 유지
+        max_age=60 * 60 * 8,
     )
-    return {"success": True, "message": "로그인 및 데이터 동기화 완료","user_name": crawled_data.get("user_name","학우")}
-
-
+    
+    return {
+        "success": True, 
+        "message": "로그인 및 데이터 동기화 완료",
+        "user_name": user_name
+    }
 @router.get("/assignments")
 async def lms_assignments(lms_session: Optional[str] = Cookie(default=None)):
     """현재 로그인된 세션의 과제 목록을 반환합니다."""
