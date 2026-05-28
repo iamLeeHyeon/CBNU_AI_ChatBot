@@ -70,19 +70,21 @@ export default function App() {
     setCurrentChatId(tid);
   };
 
-  async function handleSend(text) {
+async function handleSend(text) {
     if (!text.trim()) return;
     setIsLoading(true);
 
     const userMsg = { role: "user", content: text };
     const tempMessages = [...messages, userMsg];
 
+    // 💡 [변경 1] 사용자 메시지와 함께 챗봇의 "빈 말풍선"을 미리 하나 만들어 둡니다.
+    const emptyBotMsg = { role: "assistant", content: "", sources: [] };
 
     setChatHistory(prev => prev.map(chat => 
       Number(chat.id) === Number(currentChatId) 
         ? { 
             ...chat, 
-            messages: tempMessages, 
+            messages: [...tempMessages, emptyBotMsg], // 빈 말풍선 렌더링
             title: chat.messages.length === 0 ? text.substring(0, 20) : chat.title 
           } 
         : chat
@@ -93,28 +95,104 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: tempMessages, use_search: useSearch }),
+        // LMS 세션을 백엔드로 보내려면 credentials가 필요할 수 있습니다 (옵션)
+        // credentials: "include" 
       });
 
       if (!res.ok) throw new Error("서버 응답 오류");
-      const data = await res.json();
 
-      const assistantMsg = { role: "assistant", content: data.reply, sources: data.sources };
+      // 💡 [변경 2] JSON을 한 번에 받지 않고 스트림 리더기를 켭니다.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
       
+      let botReply = "";
+      let isFirstToken = true;
 
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break; // 스트리밍 완전 종료
+
+        // 청크(조각) 디코딩
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.replace("data: ", "");
+            if (!dataStr) continue;
+
+            try {
+              const data = JSON.parse(dataStr);
+
+              // 🟢 토큰(글자) 수신 시: 실시간으로 글자 이어붙이기
+              if (data.type === "token") {
+                if (isFirstToken) {
+                  setIsLoading(false); // 첫 글자가 도착하면 로딩 스피너를 끕니다!
+                  isFirstToken = false;
+                }
+                botReply += data.value;
+
+                // 현재 채팅방의 마지막 메시지(빈 말풍선)를 찾아서 텍스트를 업데이트
+                setChatHistory(prev => prev.map(chat => {
+                  if (Number(chat.id) === Number(currentChatId)) {
+                    const updatedMsgs = [...chat.messages];
+                    updatedMsgs[updatedMsgs.length - 1].content = botReply;
+                    return { ...chat, messages: updatedMsgs };
+                  }
+                  return chat;
+                }));
+              } 
+              // 🔵 출처(Sources) 수신 시: 해당 메시지에 출처 배열 추가
+              else if (data.type === "sources") {
+                setChatHistory(prev => prev.map(chat => {
+                  if (Number(chat.id) === Number(currentChatId)) {
+                    const updatedMsgs = [...chat.messages];
+                    updatedMsgs[updatedMsgs.length - 1].sources = data.value;
+                    return { ...chat, messages: updatedMsgs };
+                  }
+                  return chat;
+                }));
+              } 
+              // 🔴 에러 수신 시: 에러 메시지 출력
+              else if (data.type === "error") {
+                setIsLoading(false);
+                botReply += `\n\n⚠️ 오류: ${data.value}`;
+                setChatHistory(prev => prev.map(chat => {
+                  if (Number(chat.id) === Number(currentChatId)) {
+                    const updatedMsgs = [...chat.messages];
+                    updatedMsgs[updatedMsgs.length - 1].content = botReply;
+                    return { ...chat, messages: updatedMsgs };
+                  }
+                  return chat;
+                }));
+              }
+            } catch (err) {
+              console.error("스트리밍 JSON 파싱 에러:", err, dataStr);
+            }
+          }
+        }
+      }
+      
+      // 채팅이 끝나면 최근 활성화된 채팅이 맨 위로 오도록 배열을 재정렬합니다 (기존 로직 유지)
       setChatHistory(prev => {
-        const updated = prev.map(chat => 
-          Number(chat.id) === Number(currentChatId) ? { ...chat, messages: [...tempMessages, assistantMsg] } : chat
-        );
-        const target = updated.find(c => Number(c.id) === Number(currentChatId));
-        const filtered = updated.filter(c => Number(c.id) !== Number(currentChatId));
-
-        return target ? [target, ...filtered].slice(0, 10) : updated.slice(0, 10);
+        const target = prev.find(c => Number(c.id) === Number(currentChatId));
+        const filtered = prev.filter(c => Number(c.id) !== Number(currentChatId));
+        return target ? [target, ...filtered].slice(0, 10) : prev.slice(0, 10);
       });
+
     } catch (err) {
       console.error("전송 오류:", err);
-
+      // 네트워크 오류 시 사용자에게 알림
+      setChatHistory(prev => prev.map(chat => {
+        if (Number(chat.id) === Number(currentChatId)) {
+          const updatedMsgs = [...chat.messages];
+          updatedMsgs[updatedMsgs.length - 1].content = "네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+          return { ...chat, messages: updatedMsgs };
+        }
+        return chat;
+      }));
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // 혹시라도 예외 상황에 대비해 스피너 끄기
     }
   }
 
