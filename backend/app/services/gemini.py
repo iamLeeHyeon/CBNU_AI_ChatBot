@@ -1,38 +1,59 @@
-import os
-import google.generativeai as genai
-from typing import List
-from app.models.schemas import Message
+async def stream_chat_response(messages, search_results=None, lms_context=""):
+    """
+    Gemini 응답을 토큰 단위로 스트리밍하는 비동기 제너레이터.
+    router의 SSE 스트림에서 async for로 소비.
+    """
+    import asyncio as _asyncio
 
-SYSTEM_PROMPT = """당신은 충북대학교(CBNU) 전용 AI 챗봇입니다.
-학생, 교직원, 방문자에게 충북대학교에 관한 정확하고 친절한 정보를 제공합니다.
-모르는 내용은 솔직히 모른다고 답하고, 공식 홈페이지(https://www.chungbuk.ac.kr) 확인을 안내하세요.
-항상 한국어로 답변하세요."""
-
-
-def build_chat_response(messages: List[Message], context: str = "", lms_context: str = "") -> str:
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    system_instruction = f"{SYSTEM_PROMPT}\n\n[시스템 정보]\n현재 일시: {now}"
     
-    system = SYSTEM_PROMPT
+    # 🚨 HEAD 브랜치의 LMS 컨텍스트 주입 로직 병합
     if lms_context:
-        system += f"\n\n{lms_context}"
+        system_instruction += f"\n\n[LMS 연동 정보]\n{lms_context}"
 
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=system,
-    )
+    try:
+        model = get_model(GEMINI_CHAT_CONFIG, system_instruction)
+        history = _build_history(messages)
 
-    history = []
-    for msg in messages[:-1]:
-        history.append({
-            "role": "user" if msg.role == "user" else "model",
-            "parts": [msg.content],
-        })
+        total_tokens = model.count_tokens(str(history)).total_tokens
+        print(f"현재 전송 토큰 수: {total_tokens}")
 
-    chat = model.start_chat(history=history)
+        chat = model.start_chat(history=history)
+        user_message = _build_user_message(
+            messages[-1].content,
+            search_results or [],
+        )
 
-    last_content = messages[-1].content
-    if context:
-        last_content = f"[참고 자료]\n{context}\n\n[질문]\n{last_content}"
+        queue = _asyncio.Queue()
+        loop = _asyncio.get_event_loop()
 
-    response = chat.send_message(last_content)
-    return response.text
+        def _run_stream():
+            try:
+                for chunk in chat.send_message(user_message, stream=True):
+                    if chunk.text:
+                        loop.call_soon_threadsafe(queue.put_nowait, chunk.text)
+            except Exception as e:
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        import threading as _threading
+        thread = _threading.Thread(target=_run_stream, daemon=True)
+        thread.start()
+
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                raise item
+            
+            words = item.split(" ")
+            for i, word in enumerate(words):
+                yield word + (" " if i < len(words) - 1 else "")
+                await _asyncio.sleep(0.03)
+
+    except Exception as e:
+        print(f"[스트리밍 오류] {e}")
+        yield "죄송합니다. 현재 서비스가 원활하지 않습니다. 잠시 후 다시 시도해주세요."
