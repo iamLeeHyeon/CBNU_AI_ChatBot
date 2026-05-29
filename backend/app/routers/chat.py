@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Cookie
-from typing import Optional 
+from typing import Optional
 from app.models.schemas import ChatRequest, ChatResponse, Course, Assignment, Grade, LMSDataResponse
 from app.services.gemini import build_chat_response
 from app.services.tavily import search_web
 from app.services.lms_context import build_lms_context
+from app.services.cafeteria import is_cafeteria_query, get_today_cafeteria_menu
 from app.routers.lms import _sessions
 import app.services.lms as lms_service
 
@@ -18,9 +19,11 @@ async def chat(req: ChatRequest, lms_session: Optional[str] = Cookie(default=Non
     context = ""
     sources: list[str] = []
 
-    if req.use_search:
-        query = req.messages[-1].content
-        context, sources = search_web(query)
+    last_message = req.messages[-1].content
+    if is_cafeteria_query(last_message):
+        context = get_today_cafeteria_menu()
+    elif req.use_search:
+        context, sources = search_web(last_message)
     
     lms_context = ""
     if lms_session and lms_session in _sessions:
