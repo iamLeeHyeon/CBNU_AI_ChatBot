@@ -25,3 +25,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         # IP → 요청 타임스탬프 큐
         self._requests: dict[str, deque] = defaultdict(deque)
+
+    def _get_client_ip(self, request: Request) -> str:
+        """X-Forwarded-For 헤더 우선, 없으면 직접 연결 IP."""
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        return request.client.host if request.client else "unknown"
