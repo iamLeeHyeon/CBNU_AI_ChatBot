@@ -108,7 +108,7 @@ const LMSDashboard = ({ onLogout }) => {
                   <span style={{ fontWeight: 'bold' }}>
                     {new Date(assign.due_date * 1000).toLocaleDateString("ko-KR")}
                   </span>{' '}
-                  - {assign.name}
+                  - <span style={{ color: '#555', fontSize: '0.85em' }}>[{assign.course_name}]</span> {assign.name}
                 </li>
               );
             })}
