@@ -22,7 +22,7 @@ async def lms_login(req: LMSLoginRequest, response: Response):
     학번과 비밀번호로 LMS에 로그인하고 크롤링 데이터를 세션에 저장합니다.
     """
     # req.username인지 req.student_id인지는 스키마 정의에 따라 다를 수 있으니 유연하게 처리
-    student_id = getattr(req, 'student_id', getattr(req, 'username', ''))
+    student_id = req.student_id
     
     try:
         # 팀원의 크롤러 함수 호출

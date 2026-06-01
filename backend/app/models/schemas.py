@@ -20,11 +20,6 @@ class ChatResponse(BaseModel):
 
 # ── LMS 관련 스키마 ──────────────────────────────────────────
 
-class LMSLoginRequest(BaseModel):
-    username: str
-    password: str
-
-
 class LMSLoginResponse(BaseModel):
     success: bool
     user_name: str = ""   # 로그인한 사용자 이름
@@ -65,7 +60,7 @@ class LMSDataResponse(BaseModel):
     grades: List[Grade] = []
     calendar: List[CalendarEvent] = []
 
-# LMS 로그인 요청 스키마
+
 class LMSLoginRequest(BaseModel):
     student_id: str
     password: str

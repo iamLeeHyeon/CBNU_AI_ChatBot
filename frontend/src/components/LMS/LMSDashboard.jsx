@@ -9,7 +9,7 @@ const LMSDashboard = ({ onLogout }) => {
   // 1. 페이지 로드 및 새로고침 시: 백엔드에서 '저장된 데이터'만 빠르게 가져오기
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/lms/dashboard', {
+      const response = await fetch('/api/lms/dashboard', {
         credentials: 'include' // 쿠키(세션)를 백엔드에 전달
       });
       

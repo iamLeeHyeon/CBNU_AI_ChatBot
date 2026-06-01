@@ -27,7 +27,7 @@ def _get_credentials(student_id: str | None = None, password: str | None = None)
 
 
 # ── 3. 브라우저 실행 및 LMS 로그인 ────────────────────────────────────────────
-async def _login(page: Page, student_id: str, password: str) -> None:
+async def _login(page: Page, student_id: str, password: str) -> str:
     """
     Playwright로 LMS 로그인 페이지에 접속 후 학번/비밀번호를 입력합니다.
     """
@@ -40,7 +40,7 @@ async def _login(page: Page, student_id: str, password: str) -> None:
         await page.click("button[name='loginbutton']", timeout=5000)
         
         # [핵심] 로그인 버튼 클릭 후, 서버 처리가 완료될 때까지 안전하게 5초 대기
-        await page.wait_for_load_state("networkidle", timeout=5000) 
+        await page.wait_for_load_state("networkidle", timeout=5000)
         
 
 
@@ -230,7 +230,7 @@ async def _crawl(student_id: str, password: str) -> dict:
     """
     async with async_playwright() as pw:
         # headless=True: 브라우저 창 없이 백그라운드 실행
-        browser: Browser = await pw.chromium.launch(headless=False)
+        browser: Browser = await pw.chromium.launch(headless=True)
         page: Page = await browser.new_page()
 
         try:

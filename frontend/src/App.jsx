@@ -123,8 +123,7 @@ const handleLogout = () => {
     localStorage.removeItem("cbnu_lms_username");
     setIsLoggedIn(false);
     setUserName("");
-    // 백엔드에 로그아웃 API가 있다면 여기서 추가 호출
-    // fetch("/api/lms/logout", { method: "POST" });
+    fetch("/api/lms/logout", { method: "POST" });
   };
 
 

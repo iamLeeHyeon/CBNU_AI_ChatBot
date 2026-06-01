@@ -1,14 +1,46 @@
 from fastapi import APIRouter, HTTPException, Cookie
 from typing import Optional
-from app.models.schemas import ChatRequest, ChatResponse, Course, Assignment, Grade, LMSDataResponse
+from datetime import datetime
+from app.models.schemas import ChatRequest, ChatResponse
 from app.services.gemini import build_chat_response
 from app.services.tavily import search_web
-from app.services.lms_context import build_lms_context
 from app.services.cafeteria import is_cafeteria_query, get_today_cafeteria_menu
 from app.routers.lms import _sessions
-import app.services.lms as lms_service
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+
+def _build_lms_context(data: dict) -> str:
+    sections = []
+
+    courses = data.get("courses", [])
+    if courses:
+        names = ", ".join(c["name"] for c in courses)
+        sections.append(f"수강 중인 과목: {names}")
+
+    now = datetime.now()
+    upcoming = []
+    for a in data.get("assignments", []):
+        if a.get("submitted"):
+            continue
+        due_str = a.get("due_date", "")
+        if not due_str:
+            continue
+        try:
+            due = datetime.strptime(due_str.strip(), "%Y-%m-%d %H:%M")
+            diff_days = (due - now).total_seconds() / 86400
+            if 0 <= diff_days <= 7:
+                d_label = "D-DAY" if diff_days < 1 else f"D-{int(diff_days)}"
+                upcoming.append((diff_days, f"  - [{a['course_name']}] {a['title']} ({d_label})"))
+        except ValueError:
+            pass
+    upcoming.sort(key=lambda x: x[0])
+    if upcoming:
+        sections.append("이번 주 마감 과제 (미제출):\n" + "\n".join(t for _, t in upcoming))
+
+    if not sections:
+        return ""
+    return "[현재 학생 LMS 정보]\n" + "\n\n".join(sections)
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -24,33 +56,13 @@ async def chat(req: ChatRequest, lms_session: Optional[str] = Cookie(default=Non
         context = get_today_cafeteria_menu()
     elif req.use_search:
         context, sources = search_web(last_message)
-    
+
     lms_context = ""
     if lms_session and lms_session in _sessions:
         try:
-            token   = _sessions[lms_session]["token"]
-            user_id = _sessions[lms_session]["user_id"]
-
-            raw_courses = lms_service.get_courses(token)
-            courses     = [Course(**c) for c in raw_courses]
-            course_ids  = [c.id for c in courses]
-
-            raw_assigns = lms_service.get_assignments(token, course_ids)
-            if raw_assigns:
-                assign_ids    = [a["id"] for a in raw_assigns]
-                submitted_map = lms_service.get_submission_statuses(token, assign_ids)
-                for a in raw_assigns:
-                    a["submitted"] = submitted_map.get(a["id"], False)
-            assignments = [Assignment(**a) for a in raw_assigns]
-
-            raw_grades  = lms_service.get_grades(token, user_id) if user_id else []
-            grades      = [Grade(**g) for g in raw_grades]
-
-            lms_data    = LMSDataResponse(courses=courses, assignments=assignments, grades=grades)
-            lms_context = build_lms_context(lms_data)
-
+            lms_context = _build_lms_context(_sessions[lms_session]["data"])
         except Exception:
-            lms_context = ""  # LMS 오류가 챗봇 전체를 막는 것을 방지
-    
+            lms_context = ""
+
     reply = build_chat_response(req.messages, context, lms_context)
     return ChatResponse(reply=reply, sources=sources)
