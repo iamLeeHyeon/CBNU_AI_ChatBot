@@ -117,6 +117,25 @@ def get_grades(token: str, user_id: int) -> list[dict]:
     return results
 
 
+def get_materials(token: str, course_ids: list[int]) -> list[dict]:
+    """강좌별 강의자료(파일/링크) 목록 반환. core_course_get_contents 사용."""
+    materials = []
+    for cid in course_ids:
+        try:
+            sections = _rest(token, "core_course_get_contents", courseid=cid)
+            for section in sections:
+                for module in section.get("modules", []):
+                    if module.get("modname") in ("resource", "url"):
+                        materials.append({
+                            "title": module.get("name", ""),
+                            "url": module.get("url", ""),
+                            "course_id": cid,
+                        })
+        except Exception:
+            pass
+    return materials
+
+
 def get_calendar(token: str, user_id: int) -> list[dict]:
     """향후 60일 캘린더 이벤트 반환."""
     import time

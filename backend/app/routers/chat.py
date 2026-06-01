@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Cookie
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services.gemini import build_chat_response
 from app.services.tavily import search_web
@@ -15,25 +15,21 @@ def _build_lms_context(data: dict) -> str:
 
     courses = data.get("courses", [])
     if courses:
-        names = ", ".join(c["name"] for c in courses)
+        names = ", ".join(c.get("short_name") or c.get("full_name", "") for c in courses)
         sections.append(f"수강 중인 과목: {names}")
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc).timestamp()
     upcoming = []
     for a in data.get("assignments", []):
         if a.get("submitted"):
             continue
-        due_str = a.get("due_date", "")
-        if not due_str:
+        due = a.get("due_date")
+        if not due:
             continue
-        try:
-            due = datetime.strptime(due_str.strip(), "%Y-%m-%d %H:%M")
-            diff_days = (due - now).total_seconds() / 86400
-            if 0 <= diff_days <= 7:
-                d_label = "D-DAY" if diff_days < 1 else f"D-{int(diff_days)}"
-                upcoming.append((diff_days, f"  - [{a['course_name']}] {a['title']} ({d_label})"))
-        except ValueError:
-            pass
+        diff_days = (due - now) / 86400
+        if 0 <= diff_days <= 7:
+            d_label = "D-DAY" if diff_days < 1 else f"D-{int(diff_days)}"
+            upcoming.append((diff_days, f"  - [{a['course_name']}] {a['name']} ({d_label})"))
     upcoming.sort(key=lambda x: x[0])
     if upcoming:
         sections.append("이번 주 마감 과제 (미제출):\n" + "\n".join(t for _, t in upcoming))
