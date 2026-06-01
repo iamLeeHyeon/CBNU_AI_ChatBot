@@ -109,6 +109,7 @@ def get_grades(token: str, user_id: int) -> list[dict]:
     results = []
     for item in data.get("grades", []):
         results.append({
+            "course_id": item.get("courseid"),
             "course_name": item.get("coursefullname", ""),
             "item_name": "최종 성적",
             "grade": item.get("grade"),
