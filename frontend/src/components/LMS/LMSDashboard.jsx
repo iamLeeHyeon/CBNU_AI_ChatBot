@@ -43,9 +43,24 @@ const LMSDashboard = ({ onLogout }) => {
     fetchDashboardData();
   }, []);
 
-  const handleForceSync = () => {
-    alert("정보를 다시 동기화하려면 보안을 위해 재로그인이 필요합니다.");
-    onLogout();
+  const handleForceSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/lms/sync', { method: 'POST', credentials: 'include' });
+      if (res.status === 401) {
+        onLogout();
+        return;
+      }
+      if (res.ok) {
+        await fetchDashboardData();
+      } else {
+        setError('동기화에 실패했습니다.');
+      }
+    } catch {
+      setError('서버와 연결할 수 없습니다.');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   if (loading) return <div>LMS 정보를 불러오는 중입니다...</div>;

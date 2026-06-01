@@ -77,6 +77,53 @@ async def lms_login(req: LMSLoginRequest, response: Response):
     return {"success": True, "message": "로그인 및 데이터 동기화 완료", "user_name": user_name}
 
 
+@router.post("/sync")
+async def lms_sync(lms_session: Optional[str] = Cookie(default=None)):
+    if not lms_session or lms_session not in _sessions:
+        raise HTTPException(status_code=401, detail="세션이 만료되었습니다. 다시 로그인하세요.")
+
+    session = _sessions[lms_session]
+    token = session["token"]
+    user_id = session["user_id"]
+
+    try:
+        raw_courses = await run_in_threadpool(lms_service.get_courses, token)
+        course_ids = [c["id"] for c in raw_courses]
+
+        raw_assigns = await run_in_threadpool(lms_service.get_assignments, token, course_ids)
+        if raw_assigns:
+            assign_ids = [a["id"] for a in raw_assigns]
+            submitted_map = await run_in_threadpool(
+                lms_service.get_submission_statuses, token, assign_ids
+            )
+            for a in raw_assigns:
+                a["submitted"] = submitted_map.get(a["id"], False)
+
+        all_grades = (
+            await run_in_threadpool(lms_service.get_grades, token, user_id)
+            if user_id else []
+        )
+        course_id_set = set(course_ids)
+        course_name_map = {c["id"]: c["full_name"] for c in raw_courses}
+        raw_grades = [
+            {**g, "course_name": course_name_map.get(g.get("course_id"), g.get("course_name", ""))}
+            for g in all_grades
+            if g.get("course_id") in course_id_set
+        ]
+        raw_materials = await run_in_threadpool(lms_service.get_materials, token, course_ids)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"동기화 실패: {str(e)}")
+
+    _sessions[lms_session]["data"].update({
+        "courses": raw_courses,
+        "assignments": raw_assigns,
+        "grades": raw_grades,
+        "materials": raw_materials,
+    })
+    return {"success": True, "message": "동기화 완료"}
+
+
 @router.get("/assignments")
 async def lms_assignments(lms_session: Optional[str] = Cookie(default=None)):
     if not lms_session or lms_session not in _sessions:
