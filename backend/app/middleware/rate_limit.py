@@ -32,3 +32,29 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if forwarded:
             return forwarded.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
+    
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path not in RATE_LIMITED_PATHS:
+            return await call_next(request)
+
+        ip = self._get_client_ip(request)
+        now = time.time()
+        window_start = now - RATE_LIMIT_WINDOW
+        queue = self._requests[ip]
+
+        # 윈도우 밖 타임스탬프 제거
+        while queue and queue[0] < window_start:
+            queue.popleft()
+
+        if len(queue) >= RATE_LIMIT_REQUESTS:
+            retry_after = int(queue[0] + RATE_LIMIT_WINDOW - now) + 1
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": f"요청이 너무 많습니다. {retry_after}초 후 다시 시도해주세요."
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        queue.append(now)
+        return await call_next(request)
