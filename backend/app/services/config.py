@@ -25,17 +25,17 @@ GEMINI_CHAT_CONFIG = {
 
 GEMINI_QUERY_CONFIG = {
     "temperature": 0.0,
-    "max_output_tokens": 64,
+    "max_output_tokens": 1024,
 }
 
 GEMINI_RANK_CONFIG = {
     "temperature": 0.0,
-    "max_output_tokens": 512,
+    "max_output_tokens": 2048,
 }
 
 GEMINI_SUMMARY_CONFIG = {
     "temperature": 0.2,
-    "max_output_tokens": 256,
+    "max_output_tokens": 512,
 }
 
 # ── 히스토리 요약 임계값 ──────────────────────
