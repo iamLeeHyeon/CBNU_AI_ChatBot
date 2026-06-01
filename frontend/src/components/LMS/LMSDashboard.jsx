@@ -92,6 +92,19 @@ const LMSDashboard = ({ onLogout }) => {
                 <li key={assign.id}>
                   <strong>{assign.course_name}</strong>: {assign.name}<br />
                   <span style={{ color: 'red' }}>마감: {formatDueDate(assign.due_date)}</span>
+                  {assign.cmid && (
+                    <>
+                      {' '}
+                      <a
+                        href={`${LMS_BASE}/mod/assign/view.php?id=${assign.cmid}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: '0.85em', color: '#1a73e8' }}
+                      >
+                        → 제출하기
+                      </a>
+                    </>
+                  )}
                 </li>
               ))}
           </ul>
@@ -109,6 +122,19 @@ const LMSDashboard = ({ onLogout }) => {
                     {new Date(assign.due_date * 1000).toLocaleDateString("ko-KR")}
                   </span>{' '}
                   - <span style={{ color: '#555', fontSize: '0.85em' }}>[{assign.course_name}]</span> {assign.name}
+                  {assign.cmid && (
+                    <>
+                      {' '}
+                      <a
+                        href={`${LMS_BASE}/mod/assign/view.php?id=${assign.cmid}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: '0.8em', color: '#1a73e8' }}
+                      >
+                        → 제출하기
+                      </a>
+                    </>
+                  )}
                 </li>
               );
             })}

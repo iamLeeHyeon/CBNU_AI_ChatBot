@@ -81,10 +81,11 @@ def get_assignments(token: str, course_ids: list[int]) -> list[dict]:
             due = assign.get("duedate")
             results.append({
                 "id": assign["id"],
+                "cmid": assign.get("cmid"),
                 "course_name": course_name,
                 "name": assign["name"],
                 "due_date": due if due and due > 0 else None,
-                "submitted": False,  # 제출 여부는 별도 조회
+                "submitted": False,
             })
     return results
 
