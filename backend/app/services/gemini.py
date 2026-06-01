@@ -276,17 +276,22 @@ async def stream_chat_response(messages, search_results=None):
         thread = _threading.Thread(target=_run_stream, daemon=True)
         thread.start()
  
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            if isinstance(item, Exception):
-                raise item
-            # 청크를 단어 단위로 쪼개 yield → 타이핑되는 느낌
-            words = item.split(" ")
-            for i, word in enumerate(words):
-                yield word + (" " if i < len(words) - 1 else "")
-                await _asyncio.sleep(0.03)
+#  SSE 연결이 끊어지거나 컴포넌트가 언마운트되었을 때 안전하게 종료하기 위한 try-finally
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                
+                words = item.split(" ")
+                for i, word in enumerate(words):
+                    yield word + (" " if i < len(words) - 1 else "")
+                    await _asyncio.sleep(0.03)
+        except _asyncio.CancelledError:
+            print("[스트리밍 취소] 사용자가 연결을 끊었거나 요청이 취소되었습니다.")
+            raise
  
     except Exception as e:
         print(f"[스트리밍 오류] {e}")
