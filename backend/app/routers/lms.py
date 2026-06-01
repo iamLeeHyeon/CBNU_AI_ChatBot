@@ -42,7 +42,12 @@ async def lms_login(req: LMSLoginRequest, response: Response):
             if user_id else []
         )
         course_id_set = set(course_ids)
-        raw_grades = [g for g in all_grades if g.get("course_id") in course_id_set]
+        course_name_map = {c["id"]: c["full_name"] for c in raw_courses}
+        raw_grades = [
+            {**g, "course_name": course_name_map.get(g.get("course_id"), g.get("course_name", ""))}
+            for g in all_grades
+            if g.get("course_id") in course_id_set
+        ]
         raw_materials = await run_in_threadpool(lms_service.get_materials, token, course_ids)
 
     except Exception as e:
