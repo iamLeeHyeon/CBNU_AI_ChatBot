@@ -14,6 +14,7 @@ const LMSDashboard = ({ onLogout }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   const fetchDashboardData = async () => {
     try {

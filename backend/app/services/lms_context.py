@@ -1,54 +1,53 @@
 from datetime import datetime, timezone
-from app.models.schemas import LMSDataResponse
 
 
-def build_lms_context(lms_data: LMSDataResponse) -> str:
+def build_lms_context(data: dict) -> str:
     """
-    LMSDataResponse → Gemini 시스템 프롬프트에 주입할 자연어 컨텍스트 반환.
+    _sessions의 data dict → Gemini 시스템 프롬프트에 주입할 자연어 컨텍스트 반환.
     LMS 로그인이 안 됐거나 데이터가 없으면 빈 문자열 반환.
     """
     sections = []
     now = datetime.now(timezone.utc).timestamp()
 
-    # ── 1. 수강 중인 과목 ──────────────────────────────────────
-    if lms_data.courses:
-        course_list = ", ".join(c.short_name for c in lms_data.courses)
-        sections.append(f"수강 중인 과목: {course_list}")
+    courses = data.get("courses", [])
+    if courses:
+        names = ", ".join(c.get("short_name") or c.get("full_name", "") for c in courses)
+        sections.append(f"수강 중인 과목: {names}")
 
-    # ── 2. 미제출 과제 (마감 임박순 정렬) ─────────────────────
     upcoming: list[tuple[float, str]] = []
-    overdue:  list[str] = []
+    overdue: list[str] = []
 
-    for a in lms_data.assignments:
-        if a.submitted or not a.due_date:
+    for a in data.get("assignments", []):
+        if a.get("submitted") or not a.get("due_date"):
             continue
-        diff_days = (a.due_date - now) / 86400  # 초 → 일
+        diff_days = (a["due_date"] - now) / 86400
 
         if diff_days < 0:
-            overdue.append(f"  - [{a.course_name}] {a.name} (기한 초과)")
+            overdue.append(f"  - [{a['course_name']}] {a['name']} (기한 초과)")
         elif diff_days <= 7:
             d_label = "D-DAY" if diff_days < 1 else f"D-{int(diff_days)}"
-            upcoming.append((diff_days, f"  - [{a.course_name}] {a.name} ({d_label})"))
+            upcoming.append((diff_days, f"  - [{a['course_name']}] {a['name']} ({d_label})"))
 
-    upcoming.sort(key=lambda x: x[0])  # 급한 순 정렬
+    upcoming.sort(key=lambda x: x[0])
 
     if upcoming:
-        lines = "\n".join(text for _, text in upcoming)
-        sections.append(f"이번 주 마감 과제 (미제출):\n{lines}")
+        sections.append("이번 주 마감 과제 (미제출):\n" + "\n".join(t for _, t in upcoming))
     if overdue:
         sections.append("기한 초과 과제:\n" + "\n".join(overdue))
 
-    # ── 3. 최근 성적 (최대 5개) ───────────────────────────────
-    if lms_data.grades:
+    grades = data.get("grades", [])
+    if grades:
         grade_lines = []
-        for g in lms_data.grades[:5]:
-            if g.grade and g.max_grade:
-                score = f"{g.grade} / {g.max_grade}점"
-            elif g.grade:
-                score = f"{g.grade}점"
+        for g in grades[:5]:
+            grade_val = g.get("grade")
+            max_val = g.get("max_grade")
+            if grade_val and max_val:
+                score = f"{grade_val} / {max_val}점"
+            elif grade_val:
+                score = f"{grade_val}점"
             else:
                 score = "미공개"
-            grade_lines.append(f"  - [{g.course_name}] {g.item_name}: {score}")
+            grade_lines.append(f"  - [{g.get('course_name', '')}] {g.get('item_name', '성적')}: {score}")
         sections.append("최근 성적:\n" + "\n".join(grade_lines))
 
     if not sections:
