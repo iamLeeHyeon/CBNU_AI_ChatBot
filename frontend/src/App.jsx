@@ -1,8 +1,17 @@
 import { useState, useEffect } from "react";
+import LMSLogin from "./components/LMS/LMSLogin";
+import LMSDashboard from "./components/LMS/LMSDashboard";
 import ChatWindow from "./components/ChatWindow";
 import InputBar from "./components/InputBar";
+import ChatWidget from "./components/ChatWidget";
 
 export default function App() {
+
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return !!localStorage.getItem("cbnu_lms_session");
+  });
+
+  const [userName, setUserName] = useState(() => localStorage.getItem("cbnu_lms_username") || "");
   const [chatHistory, setChatHistory] = useState(() => {
     try {
       const saved = localStorage.getItem("cbnu_chat_history");
@@ -11,6 +20,9 @@ export default function App() {
       return [{ id: Date.now(), title: "새로운 채팅", messages: [] }];
     }
   });
+
+
+
 
 
   const [currentChatId, setCurrentChatId] = useState(() => {
@@ -106,41 +118,67 @@ export default function App() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6 gap-6">
-      <aside className="w-72 h-[85vh] bg-white rounded-2xl shadow-xl flex-shrink-0 flex flex-col overflow-hidden border border-gray-200">
-        <div className="p-5 border-b font-bold text-cbnu-blue bg-gray-50 flex justify-between items-center">
-          <span>📂 채팅 기록</span>
-          <button onClick={startNewChat} className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-50 text-cbnu-blue hover:bg-cbnu-blue hover:text-white transition-all text-xl">＋</button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {chatHistory.map((chat) => (
-            <button 
-              key={chat.id}
-              onClick={() => switchChat(chat.id)}
-              className={`w-full text-left p-4 rounded-xl text-sm transition-all border ${
-                Number(chat.id) === Number(currentChatId) ? "bg-blue-50 border-blue-200" : "hover:bg-gray-50 border-transparent"
-              }`}
-            >
-              <p className={`font-semibold truncate ${Number(chat.id) === Number(currentChatId) ? "text-cbnu-blue" : "text-gray-700"}`}>📍 {chat.title}</p>
-            </button>
-          ))}
-        </div>
-      </aside>
+const handleLogout = () => {
+    localStorage.removeItem("cbnu_lms_session");
+    localStorage.removeItem("cbnu_lms_username");
+    setIsLoggedIn(false);
+    setUserName("");
+    fetch("/api/lms/logout", { method: "POST" });
+  };
 
-      <div className="w-full max-w-2xl h-[85vh] bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden border border-gray-200">
-        <header className="bg-cbnu-blue text-white px-6 py-5 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center">
-            <span className="text-cbnu-blue font-black text-xs">AI</span>
-          </div>
-          <div className="flex-1">
-            <p className="font-bold text-base leading-tight">충북대학교 AI 챗봇</p>
-            <p className="text-[10px] text-blue-200">Powered by Gemini Flash</p>
-          </div>
-        </header>
-        <ChatWindow messages={messages} isLoading={isLoading} />
-        <InputBar onSend={handleSend} isLoading={isLoading} useSearch={useSearch} onToggleSearch={() => setUseSearch(v => !v)} />
+
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        {/* onLoginSuccess에서 이름을 받아와 저장합니다 */}
+        <LMSLogin onLoginSuccess={(name) => {
+          localStorage.setItem("cbnu_lms_session", "true");
+          if (name) {
+            localStorage.setItem("cbnu_lms_username", name);
+            setUserName(name);
+          }
+          setIsLoggedIn(true);
+        }} />
       </div>
+    );
+  }
+
+return (
+    <div className="min-h-screen bg-gray-100 relative overflow-hidden flex flex-col">
+      {/* 상단 네비게이션 바 (옵션) */}
+      <header className="bg-white shadow-sm px-6 py-4 flex justify-between items-center z-10 relative">
+        <h1 className="text-xl font-bold text-cbnu-blue flex-1">충북대학교 LMS Portal</h1>
+
+        <div className="absolute left-1/2 transform -translate-x-1/2 font-bold text-lg text-gray-800">
+          {userName ? `${userName}님, 안녕하세요!` : ""}
+        </div>
+
+        <button 
+          onClick={handleLogout}
+          className="text-sm text-gray-500 hover:text-red-500"
+        >
+          로그아웃
+        </button>
+      </header>
+
+      {/* 중앙 메인 영역 (팀원들 요구사항 구현부) */}
+      <main className="flex-1 overflow-y-auto p-6">
+        <LMSDashboard onLogout={handleLogout} />
+      </main>
+
+      {/* 우측 하단 플로팅 챗봇 (기존 채팅 UI) */}
+      <ChatWidget 
+chatHistory={chatHistory}
+  currentChatId={currentChatId}
+  startNewChat={startNewChat}
+  switchChat={switchChat}
+  messages={messages}
+  handleSend={handleSend}
+  isLoading={isLoading}
+  useSearch={useSearch}
+  onToggleSearch={() => setUseSearch(v => !v)}
+      />
     </div>
   );
 }
