@@ -1,3 +1,22 @@
+// 볼드체(**)를 <strong> 태그로 변환해 주는 파싱 함수
+const parseMarkdownBold = (text) => {
+  if (!text) return "";
+
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        // AI 말풍선은 배경이 회색이므로 글씨를 검은색(text-black)으로 뚜렷하게 줍니다.
+        <strong key={index} className="font-bold text-black">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
 export default function MessageBubble({ message }) {
   const isUser = message.role === "user";
 
@@ -15,7 +34,10 @@ export default function MessageBubble({ message }) {
             : "bg-gray-100 text-gray-800 rounded-bl-sm"
         }`}
       >
-        {message.content}
+        {/* 👇 여기가 핵심입니다: 유저면 그대로, AI면 파싱 함수를 통과시킵니다 👇 */}
+        {isUser ? message.content : parseMarkdownBold(message.content)}
+
+        {/* 출처 표시 영역 */}
         {message.sources && message.sources.length > 0 && (
           <div className="mt-2 pt-2 border-t border-gray-300 text-xs text-gray-500">
             <p className="font-semibold mb-1">출처</p>
