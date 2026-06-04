@@ -152,3 +152,9 @@ npm run dev                     # http://localhost:5173
 - **웹 검색 연동** — 토글 활성화 시 Tavily로 최신 정보 검색 후 답변에 반영
 - **LMS 연동** — 충북대 e-Class 로그인 후 과제 마감일·성적·캘린더 조회
 - **공지사항 검색** — 충북대 공지사항 및 학사일정 실시간 검색
+
+# Contributors
+- 최진우 @ediottchoi
+- 김산 @sankim05
+- 홍성권 @joheonkr
+- 이현 @iamLeeHyeon
