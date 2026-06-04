@@ -90,6 +90,19 @@ npm run dev                     # http://localhost:5173
 
 ---
 
+### 3. UnitTest 실행
+```bash
+# 테스트 의존성 설치
+pip install pytest pytest-cov
+
+# 전체 테스트
+pytest tests/ --cov -v
+
+# 특정 파일만 테스트
+# pytest에서는 전체 경로 지정, --cov= 에서는 파일명만 지정
+pytest tests/test_myfile.py --cov=myfile --cov-report=term-missing
+```
+
 ## 환경변수
 
 `backend/.env` 파일에 설정합니다.
