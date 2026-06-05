@@ -57,6 +57,17 @@ cbnu-ai-chatbot/
 - Node.js 18 이상
 - [Gemini API 키](https://aistudio.google.com/app/apikey)
 - [Tavily API 키](https://tavily.com)
+  
+### 의존성 설치
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-dotenv==1.0.1
+google-generativeai==0.8.3
+tavily-python==0.5.0
+httpx==0.27.2
+pydantic==2.9.2
+playwright==1.49.0
+beautifulsoup4==4.12.3
 
 ### 1. 백엔드 실행
 
@@ -165,6 +176,10 @@ pytest tests/test_myfile.py --cov=myfile --cov-report=term-missing
 - **웹 검색 연동** — 토글 활성화 시 Tavily로 최신 정보 검색 후 답변에 반영
 - **LMS 연동** — 충북대 e-Class 로그인 후 과제 마감일·성적·캘린더 조회
 - **공지사항 검색** — 충북대 공지사항 및 학사일정 실시간 검색
+
+### License
+
+
 
 # Contributors
 - 최진우 @ediottchoi
