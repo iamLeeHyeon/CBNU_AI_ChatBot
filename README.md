@@ -122,11 +122,18 @@ cd backend
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
 # 테스트 의존성 설치
-pip install coverage pytest-mock
+pip install pytest pytest-cov
 
-# 전체 테스트 실행 및 커버리지 측정
-coverage run --source=app -m unittest discover -s tests
-coverage report -m
+#전체 테스트
+pytest tests/ --cov -v
+
+#특정 파일만 테스트
+#pytest에서는 전체 경로 지정, --cov= 에서는 파일명만 지정
+
+
+
+
+pytest tests/test_myfile.py --cov=myfile --cov-report=term-missing
 ```
 
 ---
