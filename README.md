@@ -125,7 +125,7 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install pytest pytest-cov
 
 #전체 테스트
-pytest tests/ --cov -v
+pytest tests/ --cov=app --cov-report=term-missing   
 
 #특정 파일만 테스트
 #pytest에서는 전체 경로 지정, --cov= 에서는 파일명만 지정
