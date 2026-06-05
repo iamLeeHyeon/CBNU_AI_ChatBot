@@ -1,7 +1,7 @@
 # 충북대학교 AI 챗봇
 
 Google Gemini 2.5 Flash와 Tavily 웹 검색을 결합한 충북대학교 전용 AI 챗봇입니다.  
-LMS(e-Class) 연동을 통해 수강 강좌, 과제, 성적, 캘린더 정보를 제공합니다.
+LMS(e-Class) 연동을 통해 수강 강좌, 과제, 성적 정보를 제공하며, 학식 메뉴 실시간 크롤링 기능을 포함합니다.
 
 ---
 
@@ -23,28 +23,39 @@ LMS(e-Class) 연동을 통해 수강 강좌, 과제, 성적, 캘린더 정보를
 cbnu-ai-chatbot/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI 앱, CORS, 라우터 등록
+│   │   ├── main.py                  # FastAPI 앱, CORS, 미들웨어, 라우터 등록
+│   │   ├── middleware/
+│   │   │   └── rate_limit.py        # IP 기반 요청 속도 제한
 │   │   ├── routers/
-│   │   │   ├── chat.py          # POST /api/chat
-│   │   │   ├── lms.py           # /api/lms/* (로그인, 과제, 성적 등)
-│   │   │   └── notices.py       # GET /api/notices (공지사항)
+│   │   │   ├── chat.py              # POST /api/chat (SSE 스트리밍)
+│   │   │   └── lms.py               # /api/lms/* (로그인, 대시보드, 과제, 성적 등)
 │   │   ├── services/
-│   │   │   ├── gemini.py        # Gemini 모델 초기화 및 응답 생성
-│   │   │   ├── tavily.py        # Tavily 웹 검색
-│   │   │   └── lms.py           # e-Class REST API 클라이언트
+│   │   │   ├── gemini.py            # Gemini 스트리밍 응답, 쿼리 최적화, 결과 평가
+│   │   │   ├── gemini_client.py     # Gemini 클라이언트 싱글톤
+│   │   │   ├── tavily.py            # Tavily 웹 검색
+│   │   │   ├── cafeteria.py         # 충북대 학식 메뉴 크롤러
+│   │   │   ├── lms.py               # e-Class REST API 클라이언트
+│   │   │   ├── lms_context.py       # LMS 데이터 → Gemini 컨텍스트 변환
+│   │   │   ├── utils.py             # URL 정규화, 검색 결과 전처리
+│   │   │   └── config.py            # 전역 설정값
 │   │   ├── models/
-│   │   │   └── schemas.py       # Pydantic 스키마
+│   │   │   └── schemas.py           # Pydantic 스키마
 │   │   └── crawler/
-│   │       └── notice_crawler.py # 공지사항/학사일정 검색
+│   │       └── notice_crawler.py    # 공지사항/학사일정 검색
+│   ├── tests/                       # 단위 테스트
 │   ├── requirements.txt
 │   └── .env.example
 └── frontend/
     └── src/
-        ├── App.jsx              # 루트 컴포넌트, 상태 관리
+        ├── App.jsx                  # 루트 컴포넌트, 상태 관리, SSE 파싱
         └── components/
-            ├── ChatWindow.jsx   # 메시지 목록 렌더링
-            ├── InputBar.jsx     # 입력창 + 웹 검색 토글
-            └── MessageBubble.jsx # 메시지 버블 (출처 URL 표시)
+            ├── ChatWidget.jsx       # 플로팅 채팅 위젯 (대화 목록, 삭제)
+            ├── ChatWindow.jsx       # 메시지 목록 렌더링
+            ├── InputBar.jsx         # 입력창 + 웹 검색 토글
+            ├── MessageBubble.jsx    # 메시지 버블 (출처 URL 표시)
+            └── LMS/
+                ├── LMSLogin.jsx     # LMS 로그인 폼
+                └── LMSDashboard.jsx # 강좌·과제·성적 대시보드
 ```
 
 ---
@@ -57,17 +68,6 @@ cbnu-ai-chatbot/
 - Node.js 18 이상
 - [Gemini API 키](https://aistudio.google.com/app/apikey)
 - [Tavily API 키](https://tavily.com)
-  
-### 의존성 설치
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-python-dotenv==1.0.1
-google-generativeai==0.8.3
-tavily-python==0.5.0
-httpx==0.27.2
-pydantic==2.9.2
-playwright==1.49.0
-beautifulsoup4==4.12.3
 
 ### 1. 백엔드 실행
 
@@ -101,18 +101,21 @@ npm run dev                     # http://localhost:5173
 
 ---
 
-### 3. UnitTest 실행
+### 3. Unit Test 실행
+
 ```bash
+cd backend
+source venv/bin/activate        # Windows: venv\Scripts\activate
+
 # 테스트 의존성 설치
-pip install pytest pytest-cov
+pip install coverage pytest-mock
 
-# 전체 테스트
-pytest tests/ --cov -v
-
-# 특정 파일만 테스트
-# pytest에서는 전체 경로 지정, --cov= 에서는 파일명만 지정
-pytest tests/test_myfile.py --cov=myfile --cov-report=term-missing
+# 전체 테스트 실행 및 커버리지 측정
+coverage run --source=app -m unittest discover -s tests
+coverage report -m
 ```
+
+---
 
 ## 환경변수
 
@@ -141,7 +144,7 @@ pytest tests/test_myfile.py --cov=myfile --cov-report=term-missing
 
 | Method | Endpoint | 설명 |
 |--------|----------|------|
-| POST | `/api/chat` | AI 응답 요청 (멀티턴, 웹 검색 옵션 포함) |
+| POST | `/api/chat` | AI 응답 요청 — SSE 스트리밍 방식 |
 
 **요청 예시:**
 ```json
@@ -153,31 +156,41 @@ pytest tests/test_myfile.py --cov=myfile --cov-report=term-missing
 }
 ```
 
+**응답 형식 (SSE 스트리밍):**
+```
+data: {"type": "token",   "value": "충북대학교 "}
+data: {"type": "token",   "value": "도서관은..."}
+data: {"type": "sources", "value": ["https://..."]}
+data: {"type": "done"}
+```
+
 ### LMS (e-Class 연동)
 
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | POST | `/api/lms/login` | LMS 로그인 (쿠키 세션 발급) |
 | POST | `/api/lms/logout` | 로그아웃 |
-| GET | `/api/lms/me` | 현재 로그인 상태 확인 |
-| GET | `/api/lms/data` | 강좌·과제·성적·캘린더 일괄 조회 |
-
-### 공지사항
-
-| Method | Endpoint | 설명 |
-|--------|----------|------|
-| GET | `/api/notices` | 충북대 공지사항 및 학사일정 |
+| POST | `/api/lms/sync` | LMS 데이터 재동기화 |
+| GET | `/api/lms/dashboard` | 강좌·과제·성적 일괄 조회 |
+| GET | `/api/lms/assignments` | 과제 목록 조회 |
+| GET | `/api/lms/materials` | 강의자료 목록 조회 |
 
 ---
 
 ## 주요 기능
 
 - **멀티턴 대화** — 이전 대화 맥락을 유지한 연속 질문 가능
+- **SSE 스트리밍** — 응답 토큰 단위로 실시간 출력
 - **웹 검색 연동** — 토글 활성화 시 Tavily로 최신 정보 검색 후 답변에 반영
-- **LMS 연동** — 충북대 e-Class 로그인 후 과제 마감일·성적·캘린더 조회
-- **공지사항 검색** — 충북대 공지사항 및 학사일정 실시간 검색
+- **LMS 연동** — 충북대 e-Class 로그인 후 과제 마감일·성적·강의자료 조회
+- **학식 메뉴 크롤링** — "오늘 학식" 질문 시 충북대 생협 사이트에서 실시간 메뉴 크롤링
+- **대화 관리** — 채팅 히스토리 저장, 대화 전환 및 삭제
+- **Rate Limiting** — IP 기반 분당 요청 수 제한 (API 남용 방지)
 
-### License
+---
+
+## License
+
 MIT License
 
 Copyright (c) 2026 LeeHyeon, HongSeonggwon, KimSan, ChoiJinwoo
@@ -200,8 +213,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+---
 
-# Contributors
+## Contributors
+
 - 최진우 @ediottchoi
 - 김산 @sankim05
 - 홍성권 @joheonkr
