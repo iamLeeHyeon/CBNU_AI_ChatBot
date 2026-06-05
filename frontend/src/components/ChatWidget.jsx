@@ -3,16 +3,17 @@ import { useState } from "react";
 import ChatWindow from "./ChatWindow";
 import InputBar from "./InputBar";
 
-export default function ChatWidget({ 
-  chatHistory, 
-  currentChatId, 
-  startNewChat, 
-  switchChat, 
-  messages, 
-  handleSend, 
-  isLoading, 
-  useSearch, 
-  onToggleSearch 
+export default function ChatWidget({
+  chatHistory,
+  currentChatId,
+  startNewChat,
+  switchChat,
+  deleteChat,
+  messages,
+  handleSend,
+  isLoading,
+  useSearch,
+  onToggleSearch
 }) {
   // 챗봇 창을 열고 닫는 토글 상태
   const [isOpen, setIsOpen] = useState(false);
@@ -29,7 +30,7 @@ export default function ChatWidget({
           <div className="bg-cbnu-blue text-white p-3 flex justify-between items-center z-10 shadow-sm">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-cbnu-blue font-black text-xs">AI</div>
-              <span className="font-bold">충북대학교 AI 조교</span>
+              <span className="font-bold">충북대학교 AI 챗봇</span>
             </div>
             <button 
               onClick={() => setIsOpen(false)} 
@@ -58,17 +59,32 @@ export default function ChatWidget({
               
               <div className="flex-1 overflow-y-auto p-2 space-y-2">
                 {chatHistory.map((chat) => (
-                  <button 
+                  <div
                     key={chat.id}
-                    onClick={() => switchChat(chat.id)}
-                    className={`w-full text-left p-3 rounded-xl text-xs transition-all border ${
+                    className={`flex items-center rounded-xl border transition-all ${
                       Number(chat.id) === Number(currentChatId)
-                      ? "bg-blue-50 border-blue-200 text-cbnu-blue font-bold shadow-sm" 
-                      : "hover:bg-gray-50 border-transparent text-gray-600"
+                        ? "bg-blue-50 border-blue-200 shadow-sm"
+                        : "hover:bg-gray-50 border-transparent"
                     }`}
                   >
-                    <p className="truncate">📍 {chat.title}</p>
-                  </button>
+                    <button
+                      onClick={() => switchChat(chat.id)}
+                      className={`flex-1 text-left p-3 text-xs truncate ${
+                        Number(chat.id) === Number(currentChatId)
+                          ? "text-cbnu-blue font-bold"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      📍 {chat.title}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteChat(chat.id); }}
+                      className="pr-2 text-gray-300 hover:text-red-400 transition-colors text-sm flex-shrink-0"
+                      title="대화 삭제"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

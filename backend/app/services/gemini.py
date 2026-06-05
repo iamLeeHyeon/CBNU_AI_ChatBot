@@ -263,13 +263,16 @@ async def stream_chat_response(messages, search_results=None):
         loop = _asyncio.get_event_loop()
  
         def _run_stream():
+            full_response = []
             try:
                 for chunk in chat.send_message(user_message, stream=True):
                     if chunk.text:
+                        full_response.append(chunk.text)
                         loop.call_soon_threadsafe(queue.put_nowait, chunk.text)
             except Exception as e:
                 loop.call_soon_threadsafe(queue.put_nowait, e)
             finally:
+                print(f"[Gemini 응답] {''.join(full_response)}")
                 loop.call_soon_threadsafe(queue.put_nowait, None)
  
         import threading as _threading

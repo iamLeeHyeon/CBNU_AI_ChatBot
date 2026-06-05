@@ -9,9 +9,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import ChatRequest
-from app.services.gemini import stream_chat_response, evaluate_and_rank_results, optimize_search_query
+from app.services.gemini import stream_chat_response, optimize_search_query
 from app.services.tavily import search_web
 from app.services.utils import extract_unique_sources
+from app.services.cafeteria import is_cafeteria_query, get_today_cafeteria_menu
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -29,15 +30,21 @@ async def _event_stream(req: ChatRequest):
         ranked_results: list = []
         sources: list[str] = []
 
-        if req.use_search:
-            raw_query = req.messages[-1].content
+        last_message = req.messages[-1].content
+
+        if is_cafeteria_query(last_message):
+            menu = get_today_cafeteria_menu()
+            print(f"[학식 크롤링] 메뉴 조회 완료")
+            ranked_results = [{"title": "충북대 학식 메뉴", "url": "", "content": menu}]
+        elif req.use_search:
+            raw_query = last_message
             optimized_query = await optimize_search_query(raw_query, req.messages)
             print(f"[최적화 쿼리] {optimized_query}")
 
             raw_results = search_web(optimized_query)
             print(f"[검색 결과 수] {len(raw_results)}")
 
-            ranked_results = evaluate_and_rank_results(raw_query, raw_results)
+            ranked_results = raw_results
             sources = extract_unique_sources(ranked_results)
 
         # 토큰 스트리밍

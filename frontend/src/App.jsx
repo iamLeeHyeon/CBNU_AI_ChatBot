@@ -53,6 +53,22 @@ export default function App() {
     setCurrentChatId(newId);
   };
 
+  const deleteChat = (targetId) => {
+    const tid = Number(targetId);
+    setChatHistory(prev => {
+      const remaining = prev.filter(c => Number(c.id) !== tid);
+      if (remaining.length === 0) {
+        const newChat = { id: Date.now(), title: "새로운 채팅", messages: [] };
+        setCurrentChatId(newChat.id);
+        return [newChat];
+      }
+      if (tid === Number(currentChatId)) {
+        setCurrentChatId(remaining[0].id);
+      }
+      return remaining;
+    });
+  };
+
   const switchChat = (targetId) => {
     const tid = Number(targetId);
     if (tid === Number(currentChatId)) return;
@@ -96,23 +112,62 @@ export default function App() {
       });
 
       if (!res.ok) throw new Error("서버 응답 오류");
-      const data = await res.json();
 
-      const assistantMsg = { role: "assistant", content: data.reply, sources: data.sources };
-      
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let reply = "";
+      let sources = [];
+      let buffer = "";
+      let isDone = false;
+
+      while (!isDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // 마지막 불완전한 줄은 다음 청크를 위해 보존
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "token") {
+              reply += event.value;
+              setChatHistory(prev => prev.map(chat =>
+                Number(chat.id) === Number(currentChatId)
+                  ? { ...chat, messages: [...tempMessages, { role: "assistant", content: reply, sources: [] }] }
+                  : chat
+              ));
+            } else if (event.type === "sources") {
+              sources = event.value;
+            } else if (event.type === "done") {
+              isDone = true;
+              break;
+            } else if (event.type === "error") {
+              reply = event.value;
+              isDone = true;
+              break;
+            }
+          } catch (e) {
+            // 불완전한 JSON 라인 무시
+          }
+        }
+      }
 
       setChatHistory(prev => {
-        const updated = prev.map(chat => 
-          Number(chat.id) === Number(currentChatId) ? { ...chat, messages: [...tempMessages, assistantMsg] } : chat
+        const updated = prev.map(chat =>
+          Number(chat.id) === Number(currentChatId)
+            ? { ...chat, messages: [...tempMessages, { role: "assistant", content: reply, sources }] }
+            : chat
         );
         const target = updated.find(c => Number(c.id) === Number(currentChatId));
         const filtered = updated.filter(c => Number(c.id) !== Number(currentChatId));
-
         return target ? [target, ...filtered].slice(0, 10) : updated.slice(0, 10);
       });
+
     } catch (err) {
       console.error("전송 오류:", err);
-
     } finally {
       setIsLoading(false);
     }
@@ -168,16 +223,17 @@ return (
       </main>
 
       {/* 우측 하단 플로팅 챗봇 (기존 채팅 UI) */}
-      <ChatWidget 
-chatHistory={chatHistory}
-  currentChatId={currentChatId}
-  startNewChat={startNewChat}
-  switchChat={switchChat}
-  messages={messages}
-  handleSend={handleSend}
-  isLoading={isLoading}
-  useSearch={useSearch}
-  onToggleSearch={() => setUseSearch(v => !v)}
+      <ChatWidget
+        chatHistory={chatHistory}
+        currentChatId={currentChatId}
+        startNewChat={startNewChat}
+        switchChat={switchChat}
+        deleteChat={deleteChat}
+        messages={messages}
+        handleSend={handleSend}
+        isLoading={isLoading}
+        useSearch={useSearch}
+        onToggleSearch={() => setUseSearch(v => !v)}
       />
     </div>
   );
