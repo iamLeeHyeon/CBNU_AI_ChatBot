@@ -129,12 +129,10 @@ pytest tests/ --cov -v
 
 #특정 파일만 테스트
 #pytest에서는 전체 경로 지정, --cov= 에서는 파일명만 지정
-
-
-
-
 pytest tests/test_myfile.py --cov=myfile --cov-report=term-missing
 ```
+테스트 실행시 환경변수 .env파일 있는지 확인, 없다면 아래 환경변수 설정에 따라 .env 파일 만든 후 
+유닛테스트만 실행을 한다면 api키 자리에 DUMMY(아무 값, 더미)추가 후 유닛테스트 실행 
 
 ---
 
