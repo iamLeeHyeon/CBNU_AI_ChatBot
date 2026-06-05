@@ -69,6 +69,20 @@ cbnu-ai-chatbot/
 - [Gemini API 키](https://aistudio.google.com/app/apikey)
 - [Tavily API 키](https://tavily.com)
 
+### 의존성 
+
+```bash
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-dotenv==1.0.1
+google-generativeai==0.8.3
+tavily-python==0.5.0
+httpx==0.27.2
+pydantic==2.9.2
+playwright==1.49.0
+beautifulsoup4==4.12.3
+```
+
 ### 1. 백엔드 실행
 
 ```bash
